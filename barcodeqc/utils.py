@@ -10,11 +10,43 @@ import warnings
 
 from jinja2 import Template
 from matplotlib.ticker import FuncFormatter
+from pathlib import Path
+
+from barcodeqc.files import open_positions_file
 
 logging.basicConfig(
     format="%(levelname)s - %(asctime)s - %(message)s",
     level=logging.INFO
 )
+
+repo_root = os.path.abspath(os.path.dirname(__file__))
+
+BARCODE_PATHS = {
+    "bc50": {
+        "whitelist": f"{repo_root}/whitelists/bc50.txt",
+        "positions": f"{repo_root}/position_files/x50_all_tissue_positions_list.csv"
+    },
+    "bc96": {
+        "whitelist": f"{repo_root}/whitelists/bc96.txt",
+        "positions": f"{repo_root}/position_files/x96_all_tissue_positions_list.csv"
+    },
+    "fg96": {
+        "whitelist": f"{repo_root}/whitelists/bc96FG_11DEC.txt",
+        "positions": f"{repo_root}/position_files/xfg96_11DEC_alltissue_positions_list.csv"
+    },
+    "bc220": {
+        "whitelist": f"{repo_root}/whitelists/bc220_25APR.txt",
+        "positions": f"{repo_root}/position_files/xbc220_25APR_alltissue_positions_list.csv"
+    },
+    "bc220_05-OCT": {
+        "whitelist": f"{repo_root}/whitelists/bc220_05OCT.txt",
+        "positions": f"{repo_root}/position_files/xbc220_05OCT_alltissue_positions_list.csv"
+    },
+    "bc220_20-MAY": {
+        "whitelist": f"{repo_root}/whitelists/bc220_20MAY.txt",
+        "positions": f"{repo_root}/position_files/xbc220-20MAY_alltissue_positions_list.csv"
+    }
+}
 
 
 def concatenate_2pairs(list1, list2):
@@ -245,16 +277,16 @@ def load_wc_file(wcPath):
     return df1
 
 
-def parseReadGrep(cmdResults):
-    '''Parses output from a command with expected output:
-        Total reads: 123456
-        Reads with: 98765
-    Returns tuple ("123456", "98765").
-    '''
-    newCmd = cmdResults.replace(" ", "").split('\n')
-    totReads = newCmd[0].split(":")[1]
-    adaptRead = newCmd[1].split(":")[1]
-    return totReads, adaptRead
+def parse_read_log(log_path: str) -> tuple[str, str]:
+    text = Path(log_path).read_text()
+
+    tot = re.search(r"Total reads:\s*(\d+)", text)
+    adapt = re.search(r"Reads with.*?:\s*(\d+)", text)
+
+    if not tot or not adapt:
+        raise ValueError("Expected read counts not found")
+
+    return tot.group(1), adapt.group(1)
 
 
 def save_table_as_image(df, file_path):
@@ -323,19 +355,19 @@ def wildcardSpatial(wcL1File, wcL2File, tissuePosnFile):
     merCount = mergedTable8Mers['16mer'].value_counts()
     countTable16mer = pd.DataFrame(merCount)
 
-    # read in tiss posn file. File from spatial folder will have x,y cols
-    tissueP = pd.read_csv(tissuePosnFile, header=None)
-    colNames = ['mer', 'onOff', 'row', 'col', 'x', 'y']
-    tissueP.columns = colNames[0:len(tissueP.columns)]
+    # Read in tissue position file.
+    tissue_positions = open_positions_file(tissuePosnFile, header=None)
 
-    # merge tiss posn and countTable16mer
+    # merge tissue position and countTable16mer
     mergedTablePosition = pd.merge(
-        countTable16mer, tissueP, left_on='16mer', right_on='mer', how='outer'
+        countTable16mer,
+        tissue_positions,
+        left_on='16mer',
+        right_on='barcodes',
+        how='outer'
     )
 
     # remove all 16mers that are NOT in the tissue position file
-    mergedTablePosition.dropna(subset=['row', 'col', 'onOff'], inplace=True)
-    mergedTablePosition['col'] = mergedTablePosition['col'].astype(int)
-    mergedTablePosition['row'] = mergedTablePosition['row'].astype(int)
+    mergedTablePosition.dropna(subset=['row', 'col', 'on_off'], inplace=True)
 
     return mergedTablePosition
