@@ -1,6 +1,7 @@
 # Specific stuff
 seqtk-1.4/
 tests/
+AGENTS.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
