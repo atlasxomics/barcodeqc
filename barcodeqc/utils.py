@@ -19,32 +19,26 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-repo_root = os.path.abspath(os.path.dirname(__file__))
+repo_root = Path(os.path.abspath(os.path.dirname(__file__)))
 
 BARCODE_PATHS = {
     "bc50": {
-        "whitelist": f"{repo_root}/whitelists/bc50.txt",
-        "positions": f"{repo_root}/position_files/x50_all_tissue_positions_list.csv"
+        "positions": Path("../position_files/x50_all_tissue_positions_list.csv")
     },
     "bc96": {
-        "whitelist": f"{repo_root}/whitelists/bc96.txt",
-        "positions": f"{repo_root}/position_files/x96_all_tissue_positions_list.csv"
+        "positions": Path("../position_files/x96_all_tissue_positions_list.csv")
     },
     "fg96": {
-        "whitelist": f"{repo_root}/whitelists/bc96FG_11DEC.txt",
-        "positions": f"{repo_root}/position_files/xfg96_11DEC_alltissue_positions_list.csv"
+        "positions": repo_root / "position_files/xfg96_11DEC_alltissue_positions_list.csv"
     },
     "bc220": {
-        "whitelist": f"{repo_root}/whitelists/bc220_25APR.txt",
-        "positions": f"{repo_root}/position_files/xbc220_25APR_alltissue_positions_list.csv"
+        "positions": Path("../position_files/xbc220_25APR_alltissue_positions_list.csv")
     },
     "bc220_05-OCT": {
-        "whitelist": f"{repo_root}/whitelists/bc220_05OCT.txt",
-        "positions": f"{repo_root}/position_files/xbc220_05OCT_alltissue_positions_list.csv"
+        "positions": repo_root / "position_files/xbc220_05OCT_alltissue_positions_list.csv"
     },
     "bc220_20-MAY": {
-        "whitelist": f"{repo_root}/whitelists/bc220_20MAY.txt",
-        "positions": f"{repo_root}/position_files/xbc220-20MAY_alltissue_positions_list.csv"
+        "positions": repo_root / "position_files/xbc220-20MAY_alltissue_positions_list.csv"
     }
 }
 
@@ -277,6 +271,54 @@ def load_wc_file(wcPath):
     return df1
 
 
+def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
+    '''Merges wild-card output files from cutadapt, then merges with tissue
+    position file to create base for _spatialTable.csv.  Returns Dataframe.
+    '''
+    # read read2 L1 wc list
+    try:
+        wcL1tbl = load_wc_file(wcL1File)
+    except ValueError as e:
+        logging.error(f"{e}")
+        exit(0)
+    wcL1tbl['8mer_L1'] = wcL1tbl['8mer']
+
+    # read read2 L2 wc List
+    try:
+        wcL2tbl = load_wc_file(wcL2File)
+    except ValueError as e:
+        logging.error(f"{e}")
+        exit(0)
+    wcL2tbl['8mer_L2'] = wcL2tbl['8mer']
+
+    # merge on second column
+    mergedTable8Mers = pd.merge(wcL1tbl, wcL2tbl, on='readName')
+
+    # concat 8-mers. In the read, B is first (associated with L2)
+    mergedTable8Mers['16mer'] = mergedTable8Mers['8mer_L2'] + mergedTable8Mers['8mer_L1']
+
+    # count table of 16mers
+    merCount = mergedTable8Mers['16mer'].value_counts()
+    countTable16mer = pd.DataFrame(merCount)
+
+    # Read in tissue position file.
+    tissue_positions = open_positions_file(tissuePosnFile)
+
+    # merge tissue position and countTable16mer
+    mergedTablePosition = pd.merge(
+        countTable16mer,
+        tissue_positions,
+        left_on='16mer',
+        right_on='barcodes',
+        how='outer'
+    )
+
+    # remove all 16mers that are NOT in the tissue position file
+    mergedTablePosition.dropna(subset=['row', 'col', 'on_off'], inplace=True)
+
+    return mergedTablePosition
+
+
 def parse_read_log(log_path: str) -> tuple[str, str]:
     text = Path(log_path).read_text()
 
@@ -323,51 +365,3 @@ def variables_to_dataframe(vlist, nlist):
 
     df = pd.DataFrame(data)
     return df
-
-
-def wildcardSpatial(wcL1File, wcL2File, tissuePosnFile):
-    '''Merges wild-card output files from cutadapt, then merges with tissue
-    position file to create base for _spatialTable.csv.  Returns Dataframe.
-    '''
-    # read read2 L1 wc list
-    try:
-        wcL1tbl = load_wc_file(wcL1File)
-    except ValueError as e:
-        logging.error(f"{e}")
-        exit(0)
-    wcL1tbl['8mer_L1'] = wcL1tbl['8mer']
-
-    # read read2 L2 wc List
-    try:
-        wcL2tbl = load_wc_file(wcL2File)
-    except ValueError as e:
-        logging.error(f"{e}")
-        exit(0)
-    wcL2tbl['8mer_L2'] = wcL2tbl['8mer']
-
-    # merge on second column
-    mergedTable8Mers = pd.merge(wcL1tbl, wcL2tbl, on='readName')
-
-    # concat 8-mers. In the read, B is first (associated with L2)
-    mergedTable8Mers['16mer'] = mergedTable8Mers['8mer_L2'] + mergedTable8Mers['8mer_L1']
-
-    # count table of 16mers
-    merCount = mergedTable8Mers['16mer'].value_counts()
-    countTable16mer = pd.DataFrame(merCount)
-
-    # Read in tissue position file.
-    tissue_positions = open_positions_file(tissuePosnFile, header=None)
-
-    # merge tissue position and countTable16mer
-    mergedTablePosition = pd.merge(
-        countTable16mer,
-        tissue_positions,
-        left_on='16mer',
-        right_on='barcodes',
-        how='outer'
-    )
-
-    # remove all 16mers that are NOT in the tissue position file
-    mergedTablePosition.dropna(subset=['row', 'col', 'on_off'], inplace=True)
-
-    return mergedTablePosition

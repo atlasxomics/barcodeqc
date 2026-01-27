@@ -19,161 +19,149 @@ logging.basicConfig(
 
 def qc(
     sample_name: str,
-    r2_path: str,
+    r2_path: Path,
     barcode_set: Literal[
         "bc50", "bc96", "fg96", "bc220", "bc220_05-OCT", "bc220_20-MAY"
     ],
     sample_reads: int,
     random_seed: int,
-    tissue_position_file: Optional[str]
+    tissue_position_file: Optional[Path]
 ) -> Path:
 
     # Check fastq exists, if formatted propery
-    # ensure sample reads is a reasonable number
-    # If tissue positions supplied, ensure formatted correctly
+    # ensure sample_reads is a reasonable number
 
     output_dir = Path.cwd() / sample_name
     if not output_dir.exists():
         logging.info(f"Output dir {output_dir} not detected, making...")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(r2_path):
+    if not r2_path.exists():
         raise FileNotFoundError(f"fastq file path does not exist: {r2_path}")
 
-    whitelist_path = Path(utils.BARCODE_PATHS[barcode_set]["whitelist"])
-    if not whitelist_path.exists():
-        raise FileNotFoundError(
-            f"Cannot find whitelist for {barcode_set}: {whitelist_path}"
-        )
-    whitelist = [
-        line.strip() for line in whitelist_path.read_text().splitlines()
-        if line.strip()
-    ]
-
     if tissue_position_file is not None:
-        if not os.path.exists(tissue_position_file):
+        if not tissue_position_file.exists():
             raise FileNotFoundError(
                 f"Could not find tissue_postion file: {tissue_position_file}"
             )
         else:
             logging.info(f"Using tissue_postions_file: {tissue_position_file}")
     else:
-        tissue_position_file = utils.BARCODE_PATHS[barcode_set]
+        tissue_position_file = utils.BARCODE_PATHS[barcode_set]["positions"]
         logging.info(
-            f"No tissue positions supplied, using: {tissue_position_file}"
+            f"No tissue positions supplied, using: {tissue_position_file.name}"
         )
 
     # Run subsampling with seqtk
-    ds_fq = f"{r2_path}_ds{sample_reads}.fq.gz"
-    ds_cmd = f"seqtk sample -s{random_seed} {r2_path} {sample_reads} | gzip > {ds_fq}"
+    ds_path = output_dir / f"ds_{sample_reads}.fastq.gz"
+    ds_cmd = f"seqtk sample -s {random_seed} {r2_path} {sample_reads} | gzip > {ds_path}"
 
-    logging.info(f"Running subsample command: {ds_cmd}")
-    subprocess.run(ds_cmd, shell=True)
+    logging.info(f"Running subsample command:\n{ds_cmd}")
+    subprocess.run(ds_cmd, shell=True, check=True)
     logging.info("Completed subsampling")
 
     # Run filtering with cutadapt
     linker1 = "NNNNNNNNGTGGCCGATGTTTCGCATCGGCGTACGACT"
     linker2 = "NNNNNNNNATCCACGTGCTTGAGAGGCCAGAGCATTCG"
 
-    wildCardFileL1 = f"{output_dir}{sample_name}_wcR2_L1_R2.txt"
-    logFileL1 = f"{output_dir}{sample_name}_L1_R2-ATAC.log"
+    wc_linker1 = output_dir / "cutadapt_wc_L1.txt"
+    log_linker1 = output_dir / "cutadapt_L1.log"
     dmuxL1 = (
         f"cutadapt "
         f"-g linker1={linker1} "
-        f"-o \"{output_dir}found-{sample_name}-{{name}}.fastq.gz\" "
+        f"-o /dev/null "
         "--action=lowercase --cores 30 "
         "--no-indels -e 5 "
-        f"--wildcard-file {wildCardFileL1} "
-        f"{ds_fq} "
-        f"> {logFileL1}"
+        f"--wildcard-file {wc_linker1} "
+        f"{ds_path} "
+        f"> {log_linker1}"
     )
 
-    wildCardFileL2 = f"{output_dir}{sample_name}_wcR2_L2_R2.txt"
-    logFileL2 = f"{output_dir}{sample_name}_L2_R2-ATAC.log"
+    wc_linker2 = output_dir / "cutadapt_wc_L2.txt"
+    log_linker2 = output_dir / "cutadapt_L2.log"
     dmuxL2 = (
         f"cutadapt "
         f"-g linker2={linker2} "
-        f"-o \"{output_dir}found-{sample_name}-"+"{name}"+f".fastq.gz\" "
+        f"-o /dev/null "
         "--action=lowercase --cores 30 "
         "--no-indels -e 5 "
-        f"--wildcard-file {wildCardFileL2} "
-        f"{ds_fq} "
-        f"> {logFileL2}"
+        f"--wildcard-file {wc_linker2} "
+        f"{ds_path} "
+        f"> {log_linker2}"
     )
 
-    logging.info(f"Starting dmuxL1: {dmuxL1}")
-    subprocess.run(dmuxL1, shell=True)
+    logging.info(f"Starting dmuxL1:\n{dmuxL1}")
+    subprocess.run(dmuxL1, shell=True, check=True)
     logging.info("Completed dmuxL1")
 
-    logging.info(f"Starting dmuxL2: {dmuxL2}")
-    subprocess.run(dmuxL2, shell=True)
+    logging.info(f"Starting dmuxL2:\n{dmuxL2}")
+    subprocess.run(dmuxL2, shell=True, check=True)
     logging.info("Completed dmuxL2")
 
     # SpatialTable
-    mtb = utils.wildcardSpatial(
-        wildCardFileL1, wildCardFileL2, tissue_position_file
+    spatial_table = utils.make_spatial_table(
+        wc_linker1, wc_linker2, tissue_position_file
     )
-    mtbPath = f"{output_dir}{sample_name}_spatialTable.csv"
-    mtb.to_csv(mtbPath, index=False)
+    spatial_table_path = output_dir / "spatialTable.csv"
+    spatial_table.to_csv(spatial_table_path, index=False)
 
-    # # For each dmux, process wildcard outputs.
-    # wcList = [wildCardFileL1, wildCardFileL2]
-    # logList = [logFileL1, logFileL2]
-    # rowColList = ['spatialRow', 'spatialCol']
-    # expList = [f"{sample_name}-{linkString}" for linkString in ["L1", "L2"]]
-    # countTableList = []
-    # maxToNinety = -1
-    # outLines = []
-    # for wc, logF, rc, eL in zip(wcList, logList, rowColList, expList):
-    #     logging.info(f"wcFile: {wc}\\tlog: {logF}\tchannel: {rc}")
+    # For each dmux, process wildcard outputs.
+    wcList = [wc_linker1, wc_linker2]
+    logList = [log_linker1, log_linker2]
+    expList = ["L1", "L2"]
+    countTableList = []
+    maxToNinety = -1
+    outLines = []
+    for wc, logF, eL in zip(wcList, logList, expList):
+        logging.info(f"wcFile: {wc}\\tlog: {logF}\\tsample{eL}")
 
-    #     try:
-    #         df = utils.load_wc_file(wc)
-    #     except ValueError as e:
-    #         logging.error(f"{e}")
-    #         exit(0)
+        try:
+            df = utils.load_wc_file(wc)
+        except ValueError as e:
+            logging.error(f"{e}")
+            exit(0)
 
-    #     uniqueCounts = df['8mer'].value_counts()
-    #     countTable = pd.DataFrame(uniqueCounts)
-    #     countTable['frac_count'] = uniqueCounts / uniqueCounts.sum()
+        uniqueCounts = df['8mer'].value_counts()
+        countTable = pd.DataFrame(uniqueCounts)
+        countTable['frac_count'] = uniqueCounts / uniqueCounts.sum()
 
-    #     countTable = countTable.sort_values(by=['frac_count'], ascending=False)
-    #     countTable['cumulative_sum'] = countTable['frac_count'].cumsum()
-    #     numToNinety = (countTable['cumulative_sum'] <= 0.9).sum()
-    #     try:
-    #         pctFor50 = f"{countTable.iloc[:50, 1].sum():.1%}"
-    #         pctFor96 = f"{countTable.iloc[:96, 1].sum():.1%}"
-    #     except:
-    #         pctFor50 = 'NaN'
-    #         pctFor96 = 'NaN'
+        countTable = countTable.sort_values(by=['frac_count'], ascending=False)
+        countTable['cumulative_sum'] = countTable['frac_count'].cumsum()
+        numToNinety = (countTable['cumulative_sum'] <= 0.9).sum()
+        try:
+            pctFor50 = f"{countTable.iloc[:50, 1].sum():.1%}"
+            pctFor96 = f"{countTable.iloc[:96, 1].sum():.1%}"
+        except:
+            pctFor50 = 'NaN'
+            pctFor96 = 'NaN'
 
-    #     # mark bcs that are expected from whitelist
-    #     intSet = (set(countTable.index.tolist()) & set(whitelist))
+        # mark bcs that are expected from whitelist
+        intSet = (set(countTable.index.tolist()) & set(whitelist))
 
-    #     # add column and set matches in set to True
-    #     countTable['expectMer'] = False
-    #     countTable['channel'] = -1
-    #     countTable['merLabel'] = countTable.index
+        # add column and set matches in set to True
+        countTable['expectMer'] = False
+        countTable['channel'] = -1
+        countTable['merLabel'] = countTable.index
 
-    #     for mer in list(intSet):
-    #         countTable.loc[mer, 'expectMer'] = True
+        for mer in list(intSet):
+            countTable.loc[mer, 'expectMer'] = True
 
-    #     countTableList.append(countTable)
-    #     countTable.to_csv(f'{output_dir}{eL}_counts.csv', index=False)
-    #     totalReadFromExpected = countTable['frac_count'][countTable['expectMer']].sum()
-    #     total_reads, adapter_reads = utils.parse_read_log(logF)
+        countTableList.append(countTable)
+        countTable.to_csv(output_dir / f'{eL}_counts.csv', index=False)
+        totalReadFromExpected = countTable['frac_count'][countTable['expectMer']].sum()
+        total_reads, adapter_reads = utils.parse_read_log(logF)
 
-    #     out = f'\n######### Info for {os.path.basename(wc)}\n'
-    #     out = out + f'Total Reads: {total_reads}  Reads with Adapter: {adapter_reads}'
-    #     out = out + f'\nThe number of unique strings in the 8mer column is {len(uniqueCounts)}.\nNinety percent (90%) of the reads come from total of {numToNinety} 8mers.'
-    #     out = out + f"\nTotal of {len(intSet)} out of {len(whitelist)} expected 8-mers accounted for {totalReadFromExpected:.1%} of the reads"
-    #     out = out + f"\nTop 50 8mers represent {pctFor50} fraction of reads\nTop 96 8mers represent {pctFor96} fraction of reads"
+        out = f'\n######### Info for {os.path.basename(wc)}\n'
+        out = out + f'Total Reads: {total_reads}  Reads with Adapter: {adapter_reads}'
+        out = out + f'\nThe number of unique strings in the 8mer column is {len(uniqueCounts)}.\nNinety percent (90%) of the reads come from total of {numToNinety} 8mers.'
+        out = out + f"\nTotal of {len(intSet)} out of {len(whitelist)} expected 8-mers accounted for {totalReadFromExpected:.1%} of the reads"
+        out = out + f"\nTop 50 8mers represent {pctFor50} fraction of reads\nTop 96 8mers represent {pctFor96} fraction of reads"
 
-    #     outLines.append(out)
-    #     logging.info(out)
+        outLines.append(out)
+        logging.info(out)
 
-    #     if numToNinety > maxToNinety:
-    #         maxToNinety = numToNinety
+        if numToNinety > maxToNinety:
+            maxToNinety = numToNinety
 
     # # For each of cutadapt result (L1, L2), identify hi/lo mers, save
     # # table as png if present, make barcode qc plot with hi/lo thresholds, ####
@@ -254,18 +242,18 @@ def qc(
     #     logging.info(f"Completed {barplot_name}")
 
     # # Do some on/off tissue calcs ####
-    # totalTix = len(mtb['on_off'])
-    # totalOnTis = len(mtb.loc[mtb['on_off'] == 1]['on_off'])
-    # totalOffTis = len(mtb.loc[mtb['on_off'] == 0]['on_off'])
-    # countsOnTis = mtb.loc[mtb['on_off'] == 1]['count'].sum()
-    # countsOffTis = mtb.loc[mtb['on_off'] == 0]['count'].sum()
+    # totalTix = len(spatial_table['on_off'])
+    # totalOnTis = len(spatial_table.loc[spatial_table['on_off'] == 1]['on_off'])
+    # totalOffTis = len(spatial_table.loc[spatial_table['on_off'] == 0]['on_off'])
+    # countsOnTis = spatial_table.loc[spatial_table['on_off'] == 1]['count'].sum()
+    # countsOffTis = spatial_table.loc[spatial_table['on_off'] == 0]['count'].sum()
     # countsPerTixOnTis = countsOnTis / totalOnTis
 
     # # generate density plot for on/off tissue pixels
-    # density_plotPath = f'{output_dir}{sample_name}_denseon_off.png'
+    # density_plotPath = 'output_dir / 'denseon_off.png'
 
     # utils.create_density_plot(
-    #     mtb,
+    #     spatial_table,
     #     density_plotPath,
     #     'count',
     #     'on_off',
@@ -300,7 +288,7 @@ def qc(
     #             'fractCPToffTiss', 'ratioOffvOn']
 
     # mTable = utils.variables_to_dataframe(valList, nameList)
-    # mTablePath = f"{output_dir}{sample_name}_on_offTissueTable_mqc.csv"
+    # mTablePath = output_dir / "on_offTissueTable_mqc.csv"
     # mTable.to_csv(mTablePath, index=False)
 
     # # write html with plate/plot figures, append table pics to the end of ####
@@ -312,7 +300,7 @@ def qc(
     # )
 
     # # Make pareto chart of barcode abundances, save as _output.pdf ####
-    # with PdfPages(f'{output_dir}{sample_name}_output.pdf') as pdf:
+    # with PdfPages(output_dir / 'output.pdf') as pdf:
     #     for tb, wc, ol in zip(countTableList, wcList, outLines):
     #         # define subplots
     #         startI = 0
@@ -356,4 +344,4 @@ def qc(
 
     #         pdf.savefig(fig)
 
-    return Path(mtbPath)
+    return Path(spatial_table_path)
