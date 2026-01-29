@@ -6,14 +6,20 @@ parameters used by the Latch workflow. It invokes the scripts in
 `./barcodeqc/` directly using subprocess. It supports a `--dry-run` flag to
 print commands instead of executing them.
 """
+from __future__ import annotations
+
 import argparse
 import logging
+import warnings
 
 from pathlib import Path
 
 from barcodeqc import qc
+from barcodeqc.utils import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
+warnings.filterwarnings('ignore', category=FutureWarning)
+
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +89,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> int:
-    logging.info("args: %s", vars(args))
+
+    logger = logging.getLogger(__name__)
+    logger.info("CLI started")
+    logger.debug("args: %s", vars(args))
 
     sample_dir = Path.cwd() / args.sample_name
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -98,14 +107,22 @@ def main(args: argparse.Namespace) -> int:
             tissue_position_file=args.tissue_position_file
         )
         if not spatial_table.exists():
-            logging.warning(
+            logging.error(
                 "Spatial table not found at %s after qc", spatial_table
             )
+            return 1
 
     return 0
 
 
 def run(argv: list[str] | None = None) -> int:
+
+    setup_logging(
+        log_file="barcodeqc.log",
+        stdout_level=logging.INFO,
+        file_level=logging.DEBUG,
+    )
+
     args = parse_args(argv)
     return main(args)
 

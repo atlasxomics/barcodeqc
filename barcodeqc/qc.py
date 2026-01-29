@@ -1,20 +1,17 @@
+from __future__ import annotations
+
 import logging
-import matplotlib.pyplot as plt
-import numpy as np
-import os
 import pandas as pd
 import subprocess
 
-from matplotlib.backends.backend_pdf import PdfPages
 from pathlib import Path
 from typing import Literal, Optional
 
+import barcodeqc.files as files
+import barcodeqc.plots as plots
 import barcodeqc.utils as utils
 
-logging.basicConfig(
-    format="%(levelname)s - %(asctime)s - %(message)s",
-    level=logging.INFO
-)
+logger = logging.getLogger(__name__)
 
 
 def qc(
@@ -33,7 +30,7 @@ def qc(
 
     output_dir = Path.cwd() / sample_name
     if not output_dir.exists():
-        logging.info(f"Output dir {output_dir} not detected, making...")
+        logger.debug(f"Output dir {output_dir} not detected, making...")
         output_dir.mkdir(parents=True, exist_ok=True)
 
     if not r2_path.exists():
@@ -45,20 +42,27 @@ def qc(
                 f"Could not find tissue_postion file: {tissue_position_file}"
             )
         else:
-            logging.info(f"Using tissue_postions_file: {tissue_position_file}")
+            logger.debug(f"Using tissue_postions_file: {tissue_position_file}")
     else:
         tissue_position_file = utils.BARCODE_PATHS[barcode_set]["positions"]
-        logging.info(
+        logger.debug(
             f"No tissue positions supplied, using: {tissue_position_file.name}"
         )
+
+    bca_file = utils.BARCODE_PATHS[barcode_set]["bca"]
+    bca_positions = files.open_barcode_file(bca_file)
+
+    bcb_file = utils.BARCODE_PATHS[barcode_set]["bcb"]
+    bcb_positions = files.open_barcode_file(bcb_file)
 
     # Run subsampling with seqtk
     ds_path = output_dir / f"ds_{sample_reads}.fastq.gz"
     ds_cmd = f"seqtk sample -s {random_seed} {r2_path} {sample_reads} | gzip > {ds_path}"
 
-    logging.info(f"Running subsample command:\n{ds_cmd}")
+    logger.info("Running subsample ")
+    logger.debug(ds_cmd)
     subprocess.run(ds_cmd, shell=True, check=True)
-    logging.info("Completed subsampling")
+    logger.info("Completed subsampling")
 
     # Run filtering with cutadapt
     linker1 = "NNNNNNNNGTGGCCGATGTTTCGCATCGGCGTACGACT"
@@ -90,13 +94,15 @@ def qc(
         f"> {log_linker2}"
     )
 
-    logging.info(f"Starting dmuxL1:\n{dmuxL1}")
+    logger.info("Starting dmuxL1")
+    logger.debug(dmuxL1)
     subprocess.run(dmuxL1, shell=True, check=True)
-    logging.info("Completed dmuxL1")
+    logger.info("Completed dmuxL1")
 
-    logging.info(f"Starting dmuxL2:\n{dmuxL2}")
+    logger.info("Starting dmuxL2")
+    logger.debug(dmuxL2)
     subprocess.run(dmuxL2, shell=True, check=True)
-    logging.info("Completed dmuxL2")
+    logger.info("Completed dmuxL2")
 
     # SpatialTable
     spatial_table = utils.make_spatial_table(
@@ -106,242 +112,193 @@ def qc(
     spatial_table.to_csv(spatial_table_path, index=False)
 
     # For each dmux, process wildcard outputs.
-    wcList = [wc_linker1, wc_linker2]
+    wc_list = [wc_linker1, wc_linker2]
     logList = [log_linker1, log_linker2]
     expList = ["L1", "L2"]
+    bc_list = [bca_positions, bcb_positions]
+    row_col = ["row", "col"]
     countTableList = []
+    pic_paths = []
     maxToNinety = -1
-    outLines = []
-    for wc, logF, eL in zip(wcList, logList, expList):
-        logging.info(f"wcFile: {wc}\\tlog: {logF}\\tsample{eL}")
+
+    for wc, logF, eL, bcl, rc in zip(wc_list, logList, expList, bc_list, row_col):
+
+        logger.info(f"Processing 8mer counts for {eL}")
+        logger.debug(f"wcFile: {wc}\\tlog: {logF}\\tsample: {eL}")
+
+        whitelist = bcl["sequence"]
+        wc_df = files.load_wc_file(wc)
+
+        unique_counts = wc_df['8mer'].value_counts()
+        count_table = pd.DataFrame(unique_counts)
+        count_table['frac_count'] = unique_counts / unique_counts.sum()
+
+        count_table = count_table.sort_values(by=['frac_count'], ascending=False)
+        count_table['cumulative_sum'] = count_table['frac_count'].cumsum()
+        numToNinety = (count_table['cumulative_sum'] <= 0.9).sum()
 
         try:
-            df = utils.load_wc_file(wc)
-        except ValueError as e:
-            logging.error(f"{e}")
-            exit(0)
-
-        uniqueCounts = df['8mer'].value_counts()
-        countTable = pd.DataFrame(uniqueCounts)
-        countTable['frac_count'] = uniqueCounts / uniqueCounts.sum()
-
-        countTable = countTable.sort_values(by=['frac_count'], ascending=False)
-        countTable['cumulative_sum'] = countTable['frac_count'].cumsum()
-        numToNinety = (countTable['cumulative_sum'] <= 0.9).sum()
-        try:
-            pctFor50 = f"{countTable.iloc[:50, 1].sum():.1%}"
-            pctFor96 = f"{countTable.iloc[:96, 1].sum():.1%}"
+            pctFor50 = f"{count_table.iloc[:50, 1].sum():.1%}"
+            pctFor96 = f"{count_table.iloc[:96, 1].sum():.1%}"
         except:
             pctFor50 = 'NaN'
             pctFor96 = 'NaN'
 
         # mark bcs that are expected from whitelist
-        intSet = (set(countTable.index.tolist()) & set(whitelist))
+        expected_bcs = (set(count_table.index.tolist()) & set(whitelist))
 
-        # add column and set matches in set to True
-        countTable['expectMer'] = False
-        countTable['channel'] = -1
-        countTable['merLabel'] = countTable.index
+        # Merge row/col data from bcl table
+        count_table = count_table.join(
+            bcl.set_index('sequence')[['row', 'col']],
+            how='left'
+        )
+        count_table['sequence'] = count_table.index
 
-        for mer in list(intSet):
-            countTable.loc[mer, 'expectMer'] = True
+        count_table['channel'] = -1
+        # populate channel with specified row_col value
+        count_table['channel'] = count_table[rc]
 
-        countTableList.append(countTable)
-        countTable.to_csv(output_dir / f'{eL}_counts.csv', index=False)
-        totalReadFromExpected = countTable['frac_count'][countTable['expectMer']].sum()
+        count_table['expectMer'] = count_table['sequence'].isin(expected_bcs)
+
+        count_table.to_csv(output_dir / f'{eL}_counts.csv', index=True)
+        total_read_from_expected = count_table['frac_count'][count_table['expectMer']].sum()
+
+        countTableList.append(count_table)
+
         total_reads, adapter_reads = utils.parse_read_log(logF)
-
-        out = f'\n######### Info for {os.path.basename(wc)}\n'
+        out = f'\n######### Info for {wc.name}\n'
         out = out + f'Total Reads: {total_reads}  Reads with Adapter: {adapter_reads}'
-        out = out + f'\nThe number of unique strings in the 8mer column is {len(uniqueCounts)}.\nNinety percent (90%) of the reads come from total of {numToNinety} 8mers.'
-        out = out + f"\nTotal of {len(intSet)} out of {len(whitelist)} expected 8-mers accounted for {totalReadFromExpected:.1%} of the reads"
+        out = out + f'\nThe number of unique strings in the 8mer column is {len(unique_counts)}.\nNinety percent (90%) of the reads come from total of {numToNinety} 8mers.'
+        out = out + f"\nTotal of {len(expected_bcs)} out of {len(whitelist)} expected 8-mers accounted for {total_read_from_expected:.1%} of the reads"
         out = out + f"\nTop 50 8mers represent {pctFor50} fraction of reads\nTop 96 8mers represent {pctFor96} fraction of reads"
 
-        outLines.append(out)
-        logging.info(out)
+        logger.debug(out)
 
         if numToNinety > maxToNinety:
             maxToNinety = numToNinety
 
-    # # For each of cutadapt result (L1, L2), identify hi/lo mers, save
-    # # table as png if present, make barcode qc plot with hi/lo thresholds, ####
-    # # and make barcode plate heatmap as png.
-    # picPaths = []
-    # tablePicPaths = []
-    # for ctb, eL in zip(countTableList, expList):
-    #     expectedTable = ctb.copy()
-    #     expectedTable['8mer'] = expectedTable.index
-    #     expectedTable = expectedTable[
-    #         expectedTable.channel != -1
-    #     ].sort_values(by=['channel'], ascending=True)
-    #     expectedTable['hiWarn'] = False
-    #     expectedTable['loWarn'] = False
+        logger.info(f"Identifying hi/lo barcodes for {eL}")
+        bc_table = count_table.copy()
 
-    #     meanCount = expectedTable['frac_count'].mean()
-    #     upperCut = 2 * meanCount
-    #     lowerCut = 0.5 * meanCount
+        bc_table = bc_table[bc_table["expectMer"]].sort_values(
+            by=['channel'], ascending=True
+        )
 
-    #     expectedTable.loc[expectedTable['frac_count'] > upperCut, 'hiWarn'] = True
-    #     expectedTable.loc[expectedTable['frac_count'] < lowerCut, 'loWarn'] = True
+        bc_table['hiWarn'] = False
+        bc_table['loWarn'] = False
 
-    #     totalHiWarn = expectedTable['hiWarn'].sum()
-    #     totalLoWarn = expectedTable['loWarn'].sum()
-    #     totalMers = len(expectedTable['frac_count'])
-    #     out = f'\n######### Info for {eL}\n'
-    #     out = out+f'Total hiWarn: {totalHiWarn}\tTotal loWarn: {totalLoWarn}'
-    #     out = out+f'\nPct hiWarn: {(totalHiWarn/totalMers):.3f}\tPct loWarn: {(totalLoWarn/totalMers):.3f}'
+        mean = bc_table['frac_count'].mean()
+        upperCut = 2 * mean
+        lowerCut = 0.5 * mean
 
-    #     outLines.append(out)
-    #     logging.info(out)
+        bc_table.loc[bc_table['frac_count'] > upperCut, 'hiWarn'] = True
+        bc_table.loc[bc_table['frac_count'] < lowerCut, 'loWarn'] = True
 
-    #     # save hi/loWarn table
-    #     if (totalHiWarn + totalLoWarn) > 0:  # Only export if there are hi or lows
+        totalHiWarn = bc_table['hiWarn'].sum()
+        totalLoWarn = bc_table['loWarn'].sum()
+        totalMers = len(bc_table)
 
-    #         # Create a subset of the expectedTable where hiWarn and loWarn are true
-    #         subset_expectedTable = expectedTable.loc[expectedTable['hiWarn'] | expectedTable['loWarn']]
-    #         subset_expectedTable.to_csv(
-    #             f'{output_dir}{eL}_hiLoWarn.csv', index=False
-    #         )
+        out = f'\n######### Info for {eL}\n'
+        out = out+f'Total hiWarn: {totalHiWarn}\tTotal loWarn: {totalLoWarn}'
+        if totalMers > 0:
+            out = out + f'\nPct hiWarn: {(totalHiWarn / totalMers):.3f}\tPct loWarn: {(totalLoWarn / totalMers):.3f}'
+        else:
+            out = out + '\nPct hiWarn: N/A\tPct loWarn: N/A'
 
-    #         # After generating the hi/loWarn table, save png of table
-    #         hi_lo_warn_table_path = f'{output_dir}{eL}_hiLoWarn.png'
-    #         subset_expectedTable.loc[subset_expectedTable['hiWarn'] == True, 'hiOrLo'] = 'high'
-    #         subset_expectedTable.loc[subset_expectedTable['loWarn'] == True, 'hiOrLo'] = 'low'
-    #         expectColList = ['merLabel', 'plate', 'plateCol', 'plateRow', 'count', 'hiOrLo', 'fracCount']
-    #         utils.save_table_as_image(
-    #             subset_expectedTable[expectColList],
-    #             hi_lo_warn_table_path
-    #         )
+        logger.debug(out)
 
-    #         logging.info(f"Saved hi/loWarn table as image: {hi_lo_warn_table_path}")
-    #         tablePicPaths.append(hi_lo_warn_table_path)
+        # Only export if there are hi/lows
+        if (totalHiWarn + totalLoWarn) > 0:
 
-    #     # make bar plot (barcode QC plot)
-    #     fig, ax = plt.subplots(figsize=(20, 5))
-    #     expectedTable.plot(
-    #         kind='bar',
-    #         x='channel',
-    #         y='frac_count',
-    #         ax=ax,
-    #         logy=False,
-    #         legend=False
-    #     )
-    #     ax.set_xticks(expectedTable.channel)
-    #     ax.set_xticklabels(expectedTable.merLabel, rotation=90)
-    #     ax.axhline(y=meanCount, color='tab:gray', linestyle='--', linewidth=0.5, label=f'mean: {meanCount:.3f}')
-    #     ax.axhline(y=meanCount/2, color='tab:red', linestyle='--', linewidth=0.5, label=f'half mean: {lowerCut:.3f}')
-    #     ax.axhline(y=meanCount*2, color='tab:red', linestyle='--', linewidth=0.5, label=f'dbl mean: {upperCut:.3f}')
-    #     fig.legend(loc="upper right")
-    #     fig.tight_layout()
+            subset_expectedTable = bc_table.loc[
+                bc_table['hiWarn'] | bc_table['loWarn']
+            ]
+            subset_expectedTable.to_csv(
+                output_dir / f"{eL}_hiLoWarn.csv", index=False
+            )
 
-    #     # saving plot
-    #     barplot_name = f'{output_dir}{eL}_plot.png'
-    #     logging.info(f"Saving plot {barplot_name}...")
-    #     fig.savefig(barplot_name)
-    #     picPaths.append(barplot_name)
-    #     logging.info(f"Completed {barplot_name}")
+        logger.info(f"Saving barcode barplot for {eL}...")
+        barplot_path = plots.hilo_plot(
+            bc_table,
+            "channel",
+            "frac_count",
+            "sequence",
+            output_dir,
+            f"{eL}_barplot.png",
+        )
+        pic_paths.append(barplot_path)
+        logger.info("Barplot saved...")
 
-    # # Do some on/off tissue calcs ####
-    # totalTix = len(spatial_table['on_off'])
-    # totalOnTis = len(spatial_table.loc[spatial_table['on_off'] == 1]['on_off'])
-    # totalOffTis = len(spatial_table.loc[spatial_table['on_off'] == 0]['on_off'])
-    # countsOnTis = spatial_table.loc[spatial_table['on_off'] == 1]['count'].sum()
-    # countsOffTis = spatial_table.loc[spatial_table['on_off'] == 0]['count'].sum()
-    # countsPerTixOnTis = countsOnTis / totalOnTis
+        # Make pareto chart of barcode abundances, save as _output.pdf ####
+        logger.info(f"Saving pareto plot for {eL}")
+        pareto_path = plots.pareto_plot(
+            count_table,
+            "frac_count",
+            "cumulative_sum",
+            "expectMer",
+            "channel",
+            wc,
+            maxToNinety,
+            output_dir,
+            f"{eL}_pareto.png",
+        )
+        pic_paths.append(pareto_path)
+        logger.info("Pareto plot saved...")
 
-    # # generate density plot for on/off tissue pixels
-    # density_plotPath = 'output_dir / 'denseon_off.png'
+    # Do some on/off tissue calcs
+    logger.info("Calculating on/off tissue stats...")
+    on_df = spatial_table.loc[spatial_table['on_off'] == 1]
+    off_df = spatial_table.loc[spatial_table['on_off'] == 0]
 
-    # utils.create_density_plot(
-    #     spatial_table,
-    #     density_plotPath,
-    #     'count',
-    #     'on_off',
-    #     log10=True,
-    #     x_label='total counts',
-    #     y_label='density'
-    # )
-    # picPaths.append(density_plotPath)
+    total_pix = len(spatial_table)
+    total_on = len(on_df)
+    total_off = len(off_df)
+    counts_on = on_df['count'].sum()
+    counts_off = off_df['count'].sum()
+    counts_per_pix_on = counts_on / total_on
+    if total_off > 0:
+        counts_per_pix_off = counts_off / total_off
+    else:
+        counts_per_pix_off = 0
+    frac_per_pix_off_on = counts_per_pix_off / counts_per_pix_on
+    ratio_off_on = counts_off / counts_on
 
-    # try:
-    #     countsPerTixOffTis = countsOffTis / totalOffTis
-    # except ZeroDivisionError:
-    #     countsPerTixOffTis = 0
+    logger.debug(
+        f"Pixel Stats: {total_pix=}, {total_on=}, {total_off=}, "
+        f"{counts_on=}, {counts_off=}, {ratio_off_on=}, "
+        f"{counts_per_pix_on=}, {counts_per_pix_off=}, {frac_per_pix_off_on=}"
+    )
 
-    # fractCPToffTiss = countsPerTixOffTis / countsPerTixOnTis
-    # ratioOffvOn = countsOffTis / countsOnTis
+    onoff_dict = {
+        "metric": ["total_pix", "total_on", "total_off", "counts_on", "counts_off", "ratio_off_on", "counts_per_pix_on", "counts_per_pix_off", "frac_per_pix_off_on"],
+        "value":  [total_pix, total_on, total_off, counts_on, counts_off, ratio_off_on, counts_per_pix_on, counts_per_pix_off, frac_per_pix_off_on]
+    }
+    onoff_df = pd.DataFrame(onoff_dict)
 
-    # logging.info(
-    #     f"TixelStats: {totalTix=}, {totalOnTis=}, {totalOffTis=}, \
-    #     {countsOnTis=}, {countsOffTis=}, {ratioOffvOn=}, \
-    #     {countsPerTixOnTis=}, {countsPerTixOffTis=}, {fractCPToffTiss=}"
-    # )
+    onoff_path = output_dir / "onoff_tissue_table.csv"
+    onoff_df.to_csv(onoff_path, index=False)
 
-    # valList = [
-    #     totalTix, totalOnTis, totalOffTis, countsOnTis,
-    #     countsOffTis, countsPerTixOnTis, countsPerTixOffTis,
-    #     fractCPToffTiss, ratioOffvOn
-    # ]
+    # generate density plot for on/off tissue pixels
+    density_path = output_dir / "dense_on_off.png"
+    plots.create_density_plot(
+        spatial_table,
+        density_path,
+        "count",
+        "on_off",
+        log10=True,
+        x_label="total counts",
+        y_label="density"
+    )
+    pic_paths.append(density_path)
 
-    # nameList = ['totalTix', 'totalOnTis', 'totalOffTis', 'countsOnTis',
-    #             'countsOffTis', 'countsPerTixOnTis', 'countsPerTixOffTis',
-    #             'fractCPToffTiss', 'ratioOffvOn']
+    logger.info("on/off tissue stats finished.")
 
-    # mTable = utils.variables_to_dataframe(valList, nameList)
-    # mTablePath = output_dir / "on_offTissueTable_mqc.csv"
-    # mTable.to_csv(mTablePath, index=False)
-
-    # # write html with plate/plot figures, append table pics to the end of ####
-    # #  picPaths ####
-    # picPaths = picPaths + tablePicPaths
-    # reportNoteHTML = f"<br><b>Reads with L1:</b><br>{tRead}<br><b>Reads with L1&L2:</b><br>{aRead}"
-    # utils.generate_html_with_embedded_images(
-    #     picPaths, output_dir, sample_name, noteHTML=reportNoteHTML
-    # )
-
-    # # Make pareto chart of barcode abundances, save as _output.pdf ####
-    # with PdfPages(output_dir / 'output.pdf') as pdf:
-    #     for tb, wc, ol in zip(countTableList, wcList, outLines):
-    #         # define subplots
-    #         startI = 0
-    #         endI = maxToNinety + int(maxToNinety / 2)
-    #         fig, ax = plt.subplots(figsize=(20, 10))
-
-    #         ax.plot(tb['fracCount'][startI:endI], marker='x',
-    #                 linewidth=1, label='Fraction total 8mer')
-
-    #         # define second y-axis that shares x-axis with current plot
-    #         ax2 = ax.twinx()
-
-    #         # add second line to plot
-    #         ax2.plot(
-    #             tb['cumulative_sum'][startI:endI], marker='.', linewidth=1,
-    #             color='tab:orange', label='Cumlative Fraction'
-    #         )
-
-    #         # add second y-axis label
-    #         labels0 = list(tb.index[startI:endI])
-    #         labels2 = list(tb.index[startI:endI] + "_" + tb.channel[startI:endI].astype(str).str.zfill(2))
-
-    #         chanLabels = list("_" + (tb.channel[startI:endI] + 1).astype(str).str.zfill(2))
-    #         labels3 = [f"{lb}{cb}" for lb, cb in zip(labels0, chanLabels)]
-
-    #         labels = labels3
-    #         ax.set_xticks(labels0)
-    #         ax.set_xticklabels(labels, rotation=90)
-
-    #         s = tb.expectMer[startI:endI]
-    #         makeGreen = np.where(s)[0].tolist()
-    #         for mg in makeGreen:
-    #             ax.get_xticklabels()[mg].set_color("green")
-
-    #         ax2.axhline(y=.9, color='tab:gray', linestyle='--', linewidth=0.5, label='90 percent')
-    #         fig.legend(loc="center right")
-    #         plt.title(f"plot: {wc}")
-    #         plt.annotate(ol, xy=(0.6, 0.6), xycoords='axes fraction', ha='left', va='center', ma='left')
-    #         fig.subplots_adjust(bottom=0.2)
-    #         plt.close()
-
-    #         pdf.savefig(fig)
+    logger.info("Generating html report...")
+    # write html with plate/plot figures
+    report_note = f"<br><b>Reads with L1:</b><br>{total_reads}<br><b>Reads with L1&L2:</b><br>{adapter_reads}"
+    utils.generate_html_with_embedded_images(
+        pic_paths, output_dir, sample_name, noteHTML=report_note
+    )
+    logger.info("html report finished.")
 
     return Path(spatial_table_path)
