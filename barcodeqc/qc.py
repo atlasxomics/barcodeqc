@@ -84,7 +84,7 @@ def qc(
     ):
 
         logger.info(f"Processing 8mer counts for {eL}")
-        logger.debug(f"wcFile: {wc}\\tlog: {logF}\\tsample: {eL}")
+        logger.debug(f"wcFile: {wc}\tlog: {logF}\tsample: {eL}")
 
         (
             count_table,
@@ -122,7 +122,7 @@ def qc(
         if numToNinety > maxToNinety:
             maxToNinety = numToNinety
 
-        logger.info(f"Identifying hi/lo barcodes for {eL}")
+        logger.info(f"Identifying hi/lo barcodes for {eL}...")
         bc_table, totalHiWarn, totalLoWarn, totalMers = compute_hi_lo_qc(
             count_table
         )
@@ -151,7 +151,7 @@ def qc(
             f"{eL}_barplot.png",
         )
         pic_paths.append(barplot_path)
-        logger.info("Barplot saved...")
+        logger.info("Barplot saved.")
 
         # Make pareto chart of barcode abundances, save as _output.pdf ####
         logger.info(f"Saving pareto plot for {eL}")
@@ -167,7 +167,7 @@ def qc(
             f"{eL}_pareto.png",
         )
         pic_paths.append(pareto_path)
-        logger.info("Pareto plot saved...")
+        logger.info("Pareto plot saved.")
 
     # Do some on/off tissue calcs
     logger.info("Calculating on/off tissue stats...")
@@ -190,10 +190,8 @@ def qc(
     logger.info("on/off tissue stats finished.")
 
     logger.info("Generating html report...")
-    # write html with plate/plot figures
-    report_note = f"<br><b>Reads with L1:</b><br>{total_reads}<br><b>Reads with L1&L2:</b><br>{adapter_reads}"
     utils.generate_html_with_embedded_images(
-        pic_paths, output_dir, sample_name, noteHTML=report_note
+        pic_paths, output_dir, sample_name
     )
     logger.info("html report finished.")
 

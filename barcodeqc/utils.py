@@ -7,6 +7,7 @@ import pandas as pd
 import re
 import sys
 
+from importlib.resources import files as resource_files
 from jinja2 import Template
 from pathlib import Path
 
@@ -15,11 +16,11 @@ import barcodeqc.files as files
 logger = logging.getLogger(__name__)
 
 PACKAGE_DIR = Path(__file__).parent
-PROJECT_ROOT = PACKAGE_DIR.parent
+DATA_DIR = resource_files("barcodeqc") / "data"
 
 DATA_DIRS = {
-    "positions": PROJECT_ROOT / "position_files",
-    "barcodes": PROJECT_ROOT / "barcode_files"
+    "positions": DATA_DIR / "position_files",
+    "barcodes": DATA_DIR / "barcode_files",
 }
 
 BARCODE_PATHS = {
@@ -51,7 +52,7 @@ BARCODE_PATHS = {
     "bc220_20-MAY": {
         "positions": DATA_DIRS["positions"] / "xbc220-20MAY_alltissue_positions_list.csv",
         "bca": DATA_DIRS["barcodes"] / "barcode_A" / "merList220_20-MAY.tsv",
-        "bcb": DATA_DIRS["barcodes"] / "barcode_B" / "merList220_20-MAY"
+        "bcb": DATA_DIRS["barcodes"] / "barcode_B" / "merList220_20-MAY.tsv"
     }
 }
 

@@ -22,13 +22,31 @@ def ensure_output_dir(output_dir: Path) -> None:
 
 def run_subsample(config: QCConfig) -> Path:
     ds_path = config.output_dir / f"ds_{config.sample_reads}.fastq.gz"
-    ds_cmd = (
-        f"seqtk sample -s {config.random_seed} {config.r2_path} "
-        f"{config.sample_reads} | gzip > {ds_path}"
-    )
+    seqtk_cmd = [
+        "seqtk",
+        "sample",
+        "-s",
+        str(config.random_seed),
+        str(config.r2_path),
+        str(config.sample_reads),
+    ]
+    gzip_cmd = ["gzip"]
     logger.info("Running subsample ")
-    logger.debug(ds_cmd)
-    subprocess.run(ds_cmd, shell=True, check=True)
+    logger.debug("seqtk cmd: %s", seqtk_cmd)
+    logger.debug("gzip cmd: %s > %s", gzip_cmd, ds_path)
+    with open(ds_path, "wb") as out_f:
+        seqtk_proc = subprocess.Popen(seqtk_cmd, stdout=subprocess.PIPE)
+        gzip_proc = subprocess.run(
+            gzip_cmd,
+            stdin=seqtk_proc.stdout,
+            stdout=out_f,
+            check=True,
+        )
+        if seqtk_proc.stdout is not None:
+            seqtk_proc.stdout.close()
+        seqtk_return = seqtk_proc.wait()
+        if seqtk_return != 0:
+            raise subprocess.CalledProcessError(seqtk_return, seqtk_cmd)
     logger.info("Completed subsampling")
     return ds_path
 
@@ -43,38 +61,52 @@ def run_cutadapt(
 
     wc_linker1 = output_dir / "cutadapt_wc_L1.txt"
     log_linker1 = output_dir / "cutadapt_L1.log"
-    dmuxL1 = (
-        f"cutadapt "
-        f"-g linker1={linker1} "
-        f"-o /dev/null "
-        f"--action=lowercase --cores {cores} "
-        "--no-indels -e 5 "
-        f"--wildcard-file {wc_linker1} "
-        f"{ds_path} "
-        f"> {log_linker1}"
-    )
+    dmuxL1 = [
+        "cutadapt",
+        "-g",
+        f"linker1={linker1}",
+        "-o",
+        "/dev/null",
+        "--action=lowercase",
+        "--cores",
+        str(cores),
+        "--no-indels",
+        "-e",
+        "5",
+        "--wildcard-file",
+        str(wc_linker1),
+        str(ds_path),
+    ]
 
     wc_linker2 = output_dir / "cutadapt_wc_L2.txt"
     log_linker2 = output_dir / "cutadapt_L2.log"
-    dmuxL2 = (
-        f"cutadapt "
-        f"-g linker2={linker2} "
-        f"-o /dev/null "
-        f"--action=lowercase --cores {cores} "
-        "--no-indels -e 5 "
-        f"--wildcard-file {wc_linker2} "
-        f"{ds_path} "
-        f"> {log_linker2}"
-    )
+    dmuxL2 = [
+        "cutadapt",
+        "-g",
+        f"linker2={linker2}",
+        "-o",
+        "/dev/null",
+        "--action=lowercase",
+        "--cores",
+        str(cores),
+        "--no-indels",
+        "-e",
+        "5",
+        "--wildcard-file",
+        str(wc_linker2),
+        str(ds_path),
+    ]
 
     logger.info("Starting dmuxL1")
-    logger.debug(dmuxL1)
-    subprocess.run(dmuxL1, shell=True, check=True)
+    logger.debug("cutadapt L1 cmd: %s > %s", dmuxL1, log_linker1)
+    with open(log_linker1, "w") as log_f:
+        subprocess.run(dmuxL1, stdout=log_f, stderr=log_f, check=True)
     logger.info("Completed dmuxL1")
 
     logger.info("Starting dmuxL2")
-    logger.debug(dmuxL2)
-    subprocess.run(dmuxL2, shell=True, check=True)
+    logger.debug("cutadapt L2 cmd: %s > %s", dmuxL2, log_linker2)
+    with open(log_linker2, "w") as log_f:
+        subprocess.run(dmuxL2, stdout=log_f, stderr=log_f, check=True)
     logger.info("Completed dmuxL2")
 
     return wc_linker1, log_linker1, wc_linker2, log_linker2

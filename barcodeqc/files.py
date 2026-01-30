@@ -24,7 +24,13 @@ def load_wc_file(wcPath):
     '''
     df = pd.read_csv(wcPath, header=None, sep=' ')
     colNames = list(range(0, len(df.columns)))
-    testLine = list(df.iloc[5, :])
+    try:
+        testLine = list(df.iloc[5, :])
+    except IndexError as e:
+        logging.ERROR(
+            "Fewer that 5 reads found in cutadapt wildcard file. "
+            f"Original error: {e}"
+        )
 
     if len(merCol := utils.contains_acgt_word(testLine)) != 1:
         raise WildcardFileError(f"No 8-mer column matches found: {testLine=}")
@@ -68,7 +74,7 @@ def open_barcode_file(bc_path: Path) -> pd.DataFrame:
     # must be string-like
     seq = barcodes["sequence"]
     if not seq.map(lambda x: isinstance(x, str)).all():
-        bad = barcodes.loc[~seq.map(lambda x: isinstance(x, str)), "barcodes"]
+        bad = barcodes.loc[~seq.map(lambda x: isinstance(x, str)), "sequence"]
         raise BarcodeFileError(
             f"Non-string barcodes detected (example: {bad.iloc[0]!r})"
             "Please ensure you are using the correct tissue_postions file"
