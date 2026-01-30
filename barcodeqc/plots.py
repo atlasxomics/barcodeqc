@@ -238,7 +238,7 @@ def pareto_plot(
     # Filter to only valid (non-NaN, finite) values
     slice_data = df[startI:endI].copy()
     slice_data = slice_data[
-        (slice_data[y_col1].notna()) & 
+        (slice_data[y_col1].notna()) &
         (slice_data[y_col1] > 0) &
         (np.isfinite(slice_data[y_col1]))
     ]
@@ -252,7 +252,7 @@ def pareto_plot(
         fig.savefig(outpath)
         plt.close(fig)
         return outpath
-    
+
     fig, ax = plt.subplots(figsize=(20, 10))
 
     ax.plot(
@@ -303,7 +303,7 @@ def pareto_plot(
     except np.linalg.LinAlgError:
         # Skip if axis transform is singular (e.g., empty data)
         pass
-    
+
     fig.legend(loc="center right")
     plt.title(f"plot: {wildcard_path}")
     fig.subplots_adjust(bottom=0.2)

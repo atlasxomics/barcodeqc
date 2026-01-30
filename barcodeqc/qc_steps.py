@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+import logging
+import subprocess
+
+from pathlib import Path
+
+import pandas as pd
+
+from barcodeqc.qc_config import QCConfig
+import barcodeqc.files as files
+import barcodeqc.utils as utils
+
+logger = logging.getLogger(__name__)
+
+
+def ensure_output_dir(output_dir: Path) -> None:
+    if not output_dir.exists():
+        logger.debug(f"Output dir {output_dir} not detected, making...")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def run_subsample(config: QCConfig) -> Path:
+    ds_path = config.output_dir / f"ds_{config.sample_reads}.fastq.gz"
+    ds_cmd = (
+        f"seqtk sample -s {config.random_seed} {config.r2_path} "
+        f"{config.sample_reads} | gzip > {ds_path}"
+    )
+    logger.info("Running subsample ")
+    logger.debug(ds_cmd)
+    subprocess.run(ds_cmd, shell=True, check=True)
+    logger.info("Completed subsampling")
+    return ds_path
+
+
+def run_cutadapt(
+    ds_path: Path,
+    output_dir: Path,
+    cores: int = 30,
+) -> tuple[Path, Path, Path, Path]:
+    linker1 = "NNNNNNNNGTGGCCGATGTTTCGCATCGGCGTACGACT"
+    linker2 = "NNNNNNNNATCCACGTGCTTGAGAGGCCAGAGCATTCG"
+
+    wc_linker1 = output_dir / "cutadapt_wc_L1.txt"
+    log_linker1 = output_dir / "cutadapt_L1.log"
+    dmuxL1 = (
+        f"cutadapt "
+        f"-g linker1={linker1} "
+        f"-o /dev/null "
+        f"--action=lowercase --cores {cores} "
+        "--no-indels -e 5 "
+        f"--wildcard-file {wc_linker1} "
+        f"{ds_path} "
+        f"> {log_linker1}"
+    )
+
+    wc_linker2 = output_dir / "cutadapt_wc_L2.txt"
+    log_linker2 = output_dir / "cutadapt_L2.log"
+    dmuxL2 = (
+        f"cutadapt "
+        f"-g linker2={linker2} "
+        f"-o /dev/null "
+        f"--action=lowercase --cores {cores} "
+        "--no-indels -e 5 "
+        f"--wildcard-file {wc_linker2} "
+        f"{ds_path} "
+        f"> {log_linker2}"
+    )
+
+    logger.info("Starting dmuxL1")
+    logger.debug(dmuxL1)
+    subprocess.run(dmuxL1, shell=True, check=True)
+    logger.info("Completed dmuxL1")
+
+    logger.info("Starting dmuxL2")
+    logger.debug(dmuxL2)
+    subprocess.run(dmuxL2, shell=True, check=True)
+    logger.info("Completed dmuxL2")
+
+    return wc_linker1, log_linker1, wc_linker2, log_linker2
+
+
+def build_spatial_table(
+    wc_linker1: Path,
+    wc_linker2: Path,
+    tissue_position_file: Path,
+    output_dir: Path,
+) -> tuple[pd.DataFrame, Path]:
+    spatial_table = utils.make_spatial_table(
+        wc_linker1, wc_linker2, tissue_position_file
+    )
+    spatial_table_path = output_dir / "spatialTable.csv"
+    spatial_table.to_csv(spatial_table_path, index=False)
+    return spatial_table, spatial_table_path
+
+
+def build_count_table(
+    wc_path: Path,
+    bcl: pd.DataFrame,
+    row_col: str,
+) -> tuple[pd.DataFrame, pd.Series, set[str], int, str, str, pd.Series]:
+
+    whitelist = bcl["sequence"]
+    wc_df = files.load_wc_file(wc_path)
+
+    unique_counts = wc_df["8mer"].value_counts()
+    count_table = unique_counts.to_frame(name="count")
+    count_table["frac_count"] = unique_counts / unique_counts.sum()
+
+    count_table = count_table.sort_values(by=["frac_count"], ascending=False)
+    count_table["cumulative_sum"] = count_table["frac_count"].cumsum()
+    num_to_ninety = (count_table["cumulative_sum"] <= 0.9).sum()
+
+    try:
+        pct_for_50 = f"{count_table.iloc[:50, 1].sum():.1%}"
+        pct_for_96 = f"{count_table.iloc[:96, 1].sum():.1%}"
+    except Exception:
+        pct_for_50 = "NaN"
+        pct_for_96 = "NaN"
+
+    expected_bcs = set(count_table.index.tolist()) & set(whitelist)
+
+    count_table = count_table.join(
+        bcl.set_index("sequence")[["row", "col"]],
+        how="left",
+    )
+    count_table["sequence"] = count_table.index
+
+    count_table["channel"] = count_table[row_col]
+    count_table["expectMer"] = count_table["sequence"].isin(expected_bcs)
+
+    return (
+        count_table,
+        unique_counts,
+        expected_bcs,
+        num_to_ninety,
+        pct_for_50,
+        pct_for_96,
+        whitelist
+    )
+
+
+def compute_hi_lo_qc(
+    count_table: pd.DataFrame,
+    channel_col: str = "channel",
+    frac_col: str = "frac_count",
+    expect_col: str = "expectMer",
+) -> tuple[pd.DataFrame, int, int, int]:
+    bc_table = count_table[count_table[expect_col]].sort_values(
+        by=[channel_col], ascending=True
+    )
+
+    bc_table = bc_table.copy()
+    bc_table["hiWarn"] = False
+    bc_table["loWarn"] = False
+
+    mean = bc_table[frac_col].mean()
+    upper_cut = 2 * mean
+    lower_cut = 0.5 * mean
+
+    bc_table.loc[bc_table[frac_col] > upper_cut, "hiWarn"] = True
+    bc_table.loc[bc_table[frac_col] < lower_cut, "loWarn"] = True
+
+    total_hi_warn = int(bc_table["hiWarn"].sum())
+    total_lo_warn = int(bc_table["loWarn"].sum())
+    total_mers = int(len(bc_table))
+
+    return bc_table, total_hi_warn, total_lo_warn, total_mers
+
+
+def compute_onoff_metrics(spatial_table: pd.DataFrame) -> pd.DataFrame:
+    on_df = spatial_table.loc[spatial_table["on_off"] == 1]
+    off_df = spatial_table.loc[spatial_table["on_off"] == 0]
+
+    total_pix = len(spatial_table)
+    total_on = len(on_df)
+    total_off = len(off_df)
+    counts_on = on_df["count"].sum()
+    counts_off = off_df["count"].sum()
+    counts_per_pix_on = counts_on / total_on if total_on > 0 else 0
+    counts_per_pix_off = counts_off / total_off if total_off > 0 else 0
+    frac_per_pix_off_on = (
+        counts_per_pix_off / counts_per_pix_on
+        if counts_per_pix_on > 0
+        else 0
+    )
+    ratio_off_on = counts_off / counts_on if counts_on > 0 else 0
+
+    return pd.DataFrame(
+        {
+            "metric": [
+                "total_pix",
+                "total_on",
+                "total_off",
+                "counts_on",
+                "counts_off",
+                "ratio_off_on",
+                "counts_per_pix_on",
+                "counts_per_pix_off",
+                "frac_per_pix_off_on",
+            ],
+            "value": [
+                total_pix,
+                total_on,
+                total_off,
+                counts_on,
+                counts_off,
+                ratio_off_on,
+                counts_per_pix_on,
+                counts_per_pix_off,
+                frac_per_pix_off_on,
+            ],
+        }
+    )
+
+
+def write_onoff_table(onoff_df: pd.DataFrame, output_dir: Path) -> Path:
+    onoff_path = output_dir / "onoff_tissue_table.csv"
+    onoff_df.to_csv(onoff_path, index=False)
+    return onoff_path

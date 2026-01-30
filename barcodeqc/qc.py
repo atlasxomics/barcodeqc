@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import logging
-import pandas as pd
-import subprocess
-
 from pathlib import Path
 from typing import Literal, Optional
 
 import barcodeqc.files as files
 import barcodeqc.plots as plots
 import barcodeqc.utils as utils
+from barcodeqc.logging_helpers import (
+    format_hilo_metrics, format_wildcard_metrics
+)
+from barcodeqc.qc_config import QCConfig
+from barcodeqc.qc_steps import (
+    build_count_table,
+    build_spatial_table,
+    compute_hi_lo_qc,
+    compute_onoff_metrics,
+    write_onoff_table,
+)
+from barcodeqc.qc_steps import ensure_output_dir, run_cutadapt, run_subsample
 
 logger = logging.getLogger(__name__)
 
@@ -25,29 +34,21 @@ def qc(
     tissue_position_file: Optional[Path]
 ) -> Path:
 
-    # Check fastq exists, if formatted propery
-    # ensure sample_reads is a reasonable number
+    config = QCConfig.from_args(
+        sample_name=sample_name,
+        r2_path=r2_path,
+        barcode_set=barcode_set,
+        sample_reads=sample_reads,
+        random_seed=random_seed,
+        tissue_position_file=tissue_position_file,
+    )
+    config.validate()
+    ensure_output_dir(config.output_dir)
+    output_dir = config.output_dir
 
-    output_dir = Path.cwd() / sample_name
-    if not output_dir.exists():
-        logger.debug(f"Output dir {output_dir} not detected, making...")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    if not r2_path.exists():
-        raise FileNotFoundError(f"fastq file path does not exist: {r2_path}")
-
-    if tissue_position_file is not None:
-        if not tissue_position_file.exists():
-            raise FileNotFoundError(
-                f"Could not find tissue_postion file: {tissue_position_file}"
-            )
-        else:
-            logger.debug(f"Using tissue_postions_file: {tissue_position_file}")
-    else:
-        tissue_position_file = utils.BARCODE_PATHS[barcode_set]["positions"]
-        logger.debug(
-            f"No tissue positions supplied, using: {tissue_position_file.name}"
-        )
+    logger.debug(
+        f"Using tissue_postions_file: {config.tissue_position_file}"
+    )
 
     bca_file = utils.BARCODE_PATHS[barcode_set]["bca"]
     bca_positions = files.open_barcode_file(bca_file)
@@ -55,61 +56,18 @@ def qc(
     bcb_file = utils.BARCODE_PATHS[barcode_set]["bcb"]
     bcb_positions = files.open_barcode_file(bcb_file)
 
-    # Run subsampling with seqtk
-    ds_path = output_dir / f"ds_{sample_reads}.fastq.gz"
-    ds_cmd = f"seqtk sample -s {random_seed} {r2_path} {sample_reads} | gzip > {ds_path}"
+    ds_path = run_subsample(config)
 
-    logger.info("Running subsample ")
-    logger.debug(ds_cmd)
-    subprocess.run(ds_cmd, shell=True, check=True)
-    logger.info("Completed subsampling")
-
-    # Run filtering with cutadapt
-    linker1 = "NNNNNNNNGTGGCCGATGTTTCGCATCGGCGTACGACT"
-    linker2 = "NNNNNNNNATCCACGTGCTTGAGAGGCCAGAGCATTCG"
-
-    wc_linker1 = output_dir / "cutadapt_wc_L1.txt"
-    log_linker1 = output_dir / "cutadapt_L1.log"
-    dmuxL1 = (
-        f"cutadapt "
-        f"-g linker1={linker1} "
-        f"-o /dev/null "
-        "--action=lowercase --cores 30 "
-        "--no-indels -e 5 "
-        f"--wildcard-file {wc_linker1} "
-        f"{ds_path} "
-        f"> {log_linker1}"
+    wc_linker1, log_linker1, wc_linker2, log_linker2 = run_cutadapt(
+        ds_path, config.output_dir
     )
 
-    wc_linker2 = output_dir / "cutadapt_wc_L2.txt"
-    log_linker2 = output_dir / "cutadapt_L2.log"
-    dmuxL2 = (
-        f"cutadapt "
-        f"-g linker2={linker2} "
-        f"-o /dev/null "
-        "--action=lowercase --cores 30 "
-        "--no-indels -e 5 "
-        f"--wildcard-file {wc_linker2} "
-        f"{ds_path} "
-        f"> {log_linker2}"
+    spatial_table, spatial_table_path = build_spatial_table(
+        wc_linker1,
+        wc_linker2,
+        config.tissue_position_file,
+        config.output_dir,
     )
-
-    logger.info("Starting dmuxL1")
-    logger.debug(dmuxL1)
-    subprocess.run(dmuxL1, shell=True, check=True)
-    logger.info("Completed dmuxL1")
-
-    logger.info("Starting dmuxL2")
-    logger.debug(dmuxL2)
-    subprocess.run(dmuxL2, shell=True, check=True)
-    logger.info("Completed dmuxL2")
-
-    # SpatialTable
-    spatial_table = utils.make_spatial_table(
-        wc_linker1, wc_linker2, tissue_position_file
-    )
-    spatial_table_path = output_dir / "spatialTable.csv"
-    spatial_table.to_csv(spatial_table_path, index=False)
 
     # For each dmux, process wildcard outputs.
     wc_list = [wc_linker1, wc_linker2]
@@ -121,91 +79,57 @@ def qc(
     pic_paths = []
     maxToNinety = -1
 
-    for wc, logF, eL, bcl, rc in zip(wc_list, logList, expList, bc_list, row_col):
+    for wc, logF, eL, bcl, rc in zip(
+        wc_list, logList, expList, bc_list, row_col
+    ):
 
         logger.info(f"Processing 8mer counts for {eL}")
         logger.debug(f"wcFile: {wc}\\tlog: {logF}\\tsample: {eL}")
 
-        whitelist = bcl["sequence"]
-        wc_df = files.load_wc_file(wc)
-
-        unique_counts = wc_df['8mer'].value_counts()
-        count_table = pd.DataFrame(unique_counts)
-        count_table['frac_count'] = unique_counts / unique_counts.sum()
-
-        count_table = count_table.sort_values(by=['frac_count'], ascending=False)
-        count_table['cumulative_sum'] = count_table['frac_count'].cumsum()
-        numToNinety = (count_table['cumulative_sum'] <= 0.9).sum()
-
-        try:
-            pctFor50 = f"{count_table.iloc[:50, 1].sum():.1%}"
-            pctFor96 = f"{count_table.iloc[:96, 1].sum():.1%}"
-        except:
-            pctFor50 = 'NaN'
-            pctFor96 = 'NaN'
-
-        # mark bcs that are expected from whitelist
-        expected_bcs = (set(count_table.index.tolist()) & set(whitelist))
-
-        # Merge row/col data from bcl table
-        count_table = count_table.join(
-            bcl.set_index('sequence')[['row', 'col']],
-            how='left'
-        )
-        count_table['sequence'] = count_table.index
-
-        count_table['channel'] = -1
-        # populate channel with specified row_col value
-        count_table['channel'] = count_table[rc]
-
-        count_table['expectMer'] = count_table['sequence'].isin(expected_bcs)
+        (
+            count_table,
+            unique_counts,
+            expected_bcs,
+            numToNinety,
+            pctFor50,
+            pctFor96,
+            whitelist
+        ) = build_count_table(wc, bcl, rc)
 
         count_table.to_csv(output_dir / f'{eL}_counts.csv', index=True)
-        total_read_from_expected = count_table['frac_count'][count_table['expectMer']].sum()
+        total_read_from_expected = count_table['frac_count'][
+            count_table['expectMer']
+        ].sum()
 
         countTableList.append(count_table)
 
         total_reads, adapter_reads = utils.parse_read_log(logF)
-        out = f'\n######### Info for {wc.name}\n'
-        out = out + f'Total Reads: {total_reads}  Reads with Adapter: {adapter_reads}'
-        out = out + f'\nThe number of unique strings in the 8mer column is {len(unique_counts)}.\nNinety percent (90%) of the reads come from total of {numToNinety} 8mers.'
-        out = out + f"\nTotal of {len(expected_bcs)} out of {len(whitelist)} expected 8-mers accounted for {total_read_from_expected:.1%} of the reads"
-        out = out + f"\nTop 50 8mers represent {pctFor50} fraction of reads\nTop 96 8mers represent {pctFor96} fraction of reads"
-
-        logger.debug(out)
+        logger.debug(
+            format_wildcard_metrics(
+                wc.name,
+                total_reads,
+                adapter_reads,
+                len(unique_counts),
+                numToNinety,
+                len(expected_bcs),
+                len(whitelist),
+                total_read_from_expected,
+                pctFor50,
+                pctFor96,
+            )
+        )
 
         if numToNinety > maxToNinety:
             maxToNinety = numToNinety
 
         logger.info(f"Identifying hi/lo barcodes for {eL}")
-        bc_table = count_table.copy()
-
-        bc_table = bc_table[bc_table["expectMer"]].sort_values(
-            by=['channel'], ascending=True
+        bc_table, totalHiWarn, totalLoWarn, totalMers = compute_hi_lo_qc(
+            count_table
         )
 
-        bc_table['hiWarn'] = False
-        bc_table['loWarn'] = False
-
-        mean = bc_table['frac_count'].mean()
-        upperCut = 2 * mean
-        lowerCut = 0.5 * mean
-
-        bc_table.loc[bc_table['frac_count'] > upperCut, 'hiWarn'] = True
-        bc_table.loc[bc_table['frac_count'] < lowerCut, 'loWarn'] = True
-
-        totalHiWarn = bc_table['hiWarn'].sum()
-        totalLoWarn = bc_table['loWarn'].sum()
-        totalMers = len(bc_table)
-
-        out = f'\n######### Info for {eL}\n'
-        out = out+f'Total hiWarn: {totalHiWarn}\tTotal loWarn: {totalLoWarn}'
-        if totalMers > 0:
-            out = out + f'\nPct hiWarn: {(totalHiWarn / totalMers):.3f}\tPct loWarn: {(totalLoWarn / totalMers):.3f}'
-        else:
-            out = out + '\nPct hiWarn: N/A\tPct loWarn: N/A'
-
-        logger.debug(out)
+        logger.debug(
+            format_hilo_metrics(eL, totalHiWarn, totalLoWarn, totalMers)
+        )
 
         # Only export if there are hi/lows
         if (totalHiWarn + totalLoWarn) > 0:
@@ -247,36 +171,8 @@ def qc(
 
     # Do some on/off tissue calcs
     logger.info("Calculating on/off tissue stats...")
-    on_df = spatial_table.loc[spatial_table['on_off'] == 1]
-    off_df = spatial_table.loc[spatial_table['on_off'] == 0]
-
-    total_pix = len(spatial_table)
-    total_on = len(on_df)
-    total_off = len(off_df)
-    counts_on = on_df['count'].sum()
-    counts_off = off_df['count'].sum()
-    counts_per_pix_on = counts_on / total_on
-    if total_off > 0:
-        counts_per_pix_off = counts_off / total_off
-    else:
-        counts_per_pix_off = 0
-    frac_per_pix_off_on = counts_per_pix_off / counts_per_pix_on
-    ratio_off_on = counts_off / counts_on
-
-    logger.debug(
-        f"Pixel Stats: {total_pix=}, {total_on=}, {total_off=}, "
-        f"{counts_on=}, {counts_off=}, {ratio_off_on=}, "
-        f"{counts_per_pix_on=}, {counts_per_pix_off=}, {frac_per_pix_off_on=}"
-    )
-
-    onoff_dict = {
-        "metric": ["total_pix", "total_on", "total_off", "counts_on", "counts_off", "ratio_off_on", "counts_per_pix_on", "counts_per_pix_off", "frac_per_pix_off_on"],
-        "value":  [total_pix, total_on, total_off, counts_on, counts_off, ratio_off_on, counts_per_pix_on, counts_per_pix_off, frac_per_pix_off_on]
-    }
-    onoff_df = pd.DataFrame(onoff_dict)
-
-    onoff_path = output_dir / "onoff_tissue_table.csv"
-    onoff_df.to_csv(onoff_path, index=False)
+    onoff_df = compute_onoff_metrics(spatial_table)
+    _ = write_onoff_table(onoff_df, output_dir)
 
     # generate density plot for on/off tissue pixels
     density_path = output_dir / "dense_on_off.png"
