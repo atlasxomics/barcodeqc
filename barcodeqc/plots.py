@@ -181,7 +181,12 @@ def hilo_plot(
     )
 
     ax.set_xticks(range(len(df)))
-    ax.set_xticklabels(df[label_col], rotation=90)
+    labels = df[label_col].astype(str).tolist()
+    n_labels = len(labels)
+    if n_labels > 0:
+        step = max(1, n_labels // 40)
+        shown = [lb if i % step == 0 else "" for i, lb in enumerate(labels)]
+        ax.set_xticklabels(shown, rotation=90, fontsize=6)
 
     ax.axhline(
         mean,
@@ -283,7 +288,11 @@ def pareto_plot(
     labels3 = [f"{lb}{cb}" for lb, cb in zip(labels0, chanLabels)]
 
     ax.set_xticks(range(len(labels0)))
-    ax.set_xticklabels(labels3, rotation=90)
+    n_labels = len(labels3)
+    if n_labels > 0:
+        step = max(1, n_labels // 40)
+        shown = [lb if i % step == 0 else "" for i, lb in enumerate(labels3)]
+        ax.set_xticklabels(shown, rotation=90, fontsize=6)
 
     s = slice_data[colorby]
     makeGreen = np.where(s)[0].tolist()
@@ -304,7 +313,7 @@ def pareto_plot(
         # Skip if axis transform is singular (e.g., empty data)
         pass
 
-    fig.legend(loc="center right")
+    fig.legend(loc="upper right", bbox_to_anchor=(0.98, 0.85))
     plt.title(f"plot: {wildcard_path}")
     fig.subplots_adjust(bottom=0.2)
 

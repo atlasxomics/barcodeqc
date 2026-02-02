@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import pandas as pd
+import sys
 from pathlib import Path
 from typing import Literal, Optional
 
 import barcodeqc.files as files
 import barcodeqc.plots as plots
+import barcodeqc.report as report
 import barcodeqc.utils as utils
 from barcodeqc.logging_helpers import (
     format_hilo_metrics, format_wildcard_metrics
@@ -14,8 +17,11 @@ from barcodeqc.qc_config import QCConfig
 from barcodeqc.qc_steps import (
     build_count_table,
     build_spatial_table,
+    barcode_check_status,
     compute_hi_lo_qc,
     compute_onoff_metrics,
+    lane_status,
+    linker_conservation_status,
     write_onoff_table,
 )
 from barcodeqc.qc_steps import ensure_output_dir, run_cutadapt, run_subsample
@@ -45,6 +51,12 @@ def qc(
     config.validate()
     ensure_output_dir(config.output_dir)
     output_dir = config.output_dir
+    figures_dir = output_dir / "figures"
+    tables_dir = output_dir / "tables"
+    logs_dir = output_dir / "logs"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     logger.debug(
         f"Using tissue_postions_file: {config.tissue_position_file}"
@@ -56,17 +68,17 @@ def qc(
     bcb_file = utils.BARCODE_PATHS[barcode_set]["bcb"]
     bcb_positions = files.open_barcode_file(bcb_file)
 
-    ds_path = run_subsample(config)
+    ds_path = run_subsample(config, output_dir)
 
     wc_linker1, log_linker1, wc_linker2, log_linker2 = run_cutadapt(
-        ds_path, config.output_dir
+        ds_path, logs_dir
     )
 
     spatial_table, spatial_table_path = build_spatial_table(
         wc_linker1,
         wc_linker2,
         config.tissue_position_file,
-        config.output_dir,
+        tables_dir,
     )
 
     # For each dmux, process wildcard outputs.
@@ -78,6 +90,11 @@ def qc(
     countTableList = []
     pic_paths = []
     maxToNinety = -1
+    linker_metrics: dict[str, dict[str, str | int | float]] = {}
+    linker_status: dict[str, tuple[str, float]] = {}
+    barcode_status: dict[str, tuple[str, int]] = {}
+    hi_lane_statuses: list[str] = []
+    lo_lane_statuses: list[str] = []
 
     for wc, logF, eL, bcl, rc in zip(
         wc_list, logList, expList, bc_list, row_col
@@ -96,14 +113,16 @@ def qc(
             whitelist
         ) = build_count_table(wc, bcl, rc)
 
-        count_table.to_csv(output_dir / f'{eL}_counts.csv', index=True)
+        count_table.to_csv(tables_dir / f'{eL}_counts.csv', index=True)
         total_read_from_expected = count_table['frac_count'][
             count_table['expectMer']
         ].sum()
 
         countTableList.append(count_table)
 
-        total_reads, adapter_reads = utils.parse_read_log(logF)
+        total_reads_str, adapter_reads_str = utils.parse_read_log(logF)
+        total_reads = int(total_reads_str)
+        adapter_reads = int(adapter_reads_str)
         logger.debug(
             format_wildcard_metrics(
                 wc.name,
@@ -118,6 +137,20 @@ def qc(
                 pctFor96,
             )
         )
+        linker_metrics[eL] = {
+            "Total Reads": total_reads,
+            "Total with Linker": adapter_reads,
+            "Number of Unique Barcodes": len(unique_counts),
+            "Number Barcodes with 90% of reads": numToNinety,
+            "Percent reads in expected barcodes": f"{total_read_from_expected:.1%}",
+            "Percent reads in top 50 8mers": pctFor50,
+            "Percent reads in top 96 8mers": pctFor96,
+        }
+        linker_status[eL] = linker_conservation_status(
+            total_reads,
+            adapter_reads,
+        )
+        barcode_status[eL] = barcode_check_status(count_table)
 
         if numToNinety > maxToNinety:
             maxToNinety = numToNinety
@@ -130,6 +163,8 @@ def qc(
         logger.debug(
             format_hilo_metrics(eL, totalHiWarn, totalLoWarn, totalMers)
         )
+        hi_lane_statuses.append(lane_status(bc_table, "hiWarn"))
+        lo_lane_statuses.append(lane_status(bc_table, "loWarn"))
 
         # Only export if there are hi/lows
         if (totalHiWarn + totalLoWarn) > 0:
@@ -138,7 +173,7 @@ def qc(
                 bc_table['hiWarn'] | bc_table['loWarn']
             ]
             subset_expectedTable.to_csv(
-                output_dir / f"{eL}_hiLoWarn.csv", index=False
+                tables_dir / f"{eL}_hiLoWarn.csv", index=False
             )
 
         logger.info(f"Saving barcode barplot for {eL}...")
@@ -147,7 +182,7 @@ def qc(
             "channel",
             "frac_count",
             "sequence",
-            output_dir,
+            figures_dir,
             f"{eL}_barplot.png",
         )
         pic_paths.append(barplot_path)
@@ -163,7 +198,7 @@ def qc(
             "channel",
             wc,
             maxToNinety,
-            output_dir,
+            figures_dir,
             f"{eL}_pareto.png",
         )
         pic_paths.append(pareto_path)
@@ -172,10 +207,10 @@ def qc(
     # Do some on/off tissue calcs
     logger.info("Calculating on/off tissue stats...")
     onoff_df = compute_onoff_metrics(spatial_table)
-    _ = write_onoff_table(onoff_df, output_dir)
+    _ = write_onoff_table(onoff_df, tables_dir)
 
     # generate density plot for on/off tissue pixels
-    density_path = output_dir / "dense_on_off.png"
+    density_path = figures_dir / "dense_on_off.png"
     plots.create_density_plot(
         spatial_table,
         density_path,
@@ -190,9 +225,84 @@ def qc(
     logger.info("on/off tissue stats finished.")
 
     logger.info("Generating html report...")
-    utils.generate_html_with_embedded_images(
-        pic_paths, output_dir, sample_name
+    if "CONTACT SUPPORT" in hi_lane_statuses:
+        hi_lane_summary = "CONTACT SUPPORT"
+    elif "ACTION REQUIRED" in hi_lane_statuses:
+        hi_lane_summary = "ACTION REQUIRED"
+    else:
+        hi_lane_summary = "PASS"
+
+    if "CONTACT SUPPORT" in lo_lane_statuses:
+        lo_lane_summary = "CONTACT SUPPORT"
+    elif "ACTION REQUIRED" in lo_lane_statuses:
+        lo_lane_summary = "ACTION REQUIRED"
+    else:
+        lo_lane_summary = "PASS"
+
+    ratio_row = onoff_df.loc[onoff_df["metric"] == "ratio_off_on", "value"]
+    off_tissue_ratio = (
+        f"{ratio_row.iloc[0]:.3f}" if not ratio_row.empty else "NA"
+    )
+
+    summary_table = pd.DataFrame(
+        {
+            "metric": [
+                "Linker 1 conservation",
+                "Linker 2 conservation",
+                "Barcode A check",
+                "Barcode B check",
+                "HI lanes",
+                "LO lanes",
+                "spatial artifacts",
+                "off tissue ratio",
+            ],
+            "status": [
+                linker_status.get("L1", ("NA", 0.0))[0],
+                linker_status.get("L2", ("NA", 0.0))[0],
+                barcode_status.get("L1", ("NA", 0))[0],
+                barcode_status.get("L2", ("NA", 0))[0],
+                hi_lane_summary,
+                lo_lane_summary,
+                "PASS",
+                off_tissue_ratio,
+            ],
+        }
+    )
+    _print_summary_table(summary_table)
+    report.generate_report(
+        figure_paths=pic_paths,
+        output_dir=output_dir,
+        sample_name=sample_name,
+        summary_table=summary_table,
+        linker_metrics=linker_metrics,
+        onoff_table=onoff_df,
+        file_tag="bcQC",
+        table_dir=tables_dir,
     )
     logger.info("html report finished.")
 
     return Path(spatial_table_path)
+
+
+def _print_summary_table(summary_table: pd.DataFrame) -> None:
+    if summary_table.empty:
+        return
+
+    headers = ["METRIC", "STATUS"]
+    rows = summary_table[["metric", "status"]].astype(str).values.tolist()
+    widths = [
+        max(len(headers[0]), *(len(r[0]) for r in rows)),
+        max(len(headers[1]), *(len(r[1]) for r in rows)),
+    ]
+
+    def fmt_row(left: str, right: str) -> str:
+        return f"| {left.ljust(widths[0])} | {right.ljust(widths[1])} |"
+
+    border = f"+-{'-' * widths[0]}-+-{'-' * widths[1]}-+"
+
+    print(border, file=sys.stdout)
+    print(fmt_row(headers[0], headers[1]), file=sys.stdout)
+    print(border, file=sys.stdout)
+    for left, right in rows:
+        print(fmt_row(left, right), file=sys.stdout)
+    print(border, file=sys.stdout)

@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import re
 import sys
+from datetime import datetime
 
 from importlib.resources import files as resource_files
 from jinja2 import Template
@@ -215,13 +216,15 @@ def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
 def parse_read_log(log_path: str) -> tuple[str, str]:
     text = Path(log_path).read_text()
 
-    tot = re.search(r"Total reads processed:\s*(\d+)", text)
-    adapt = re.search(r"Reads with adapters:\s*(\d+)", text)
+    tot = re.search(r"Total reads processed:\s*([\d,]+)", text)
+    adapt = re.search(r"Reads with adapters:\s*([\d,]+)", text)
 
     if not tot or not adapt:
         raise ValueError("Expected read counts not found")
 
-    return tot.group(1), adapt.group(1)
+    total_reads = tot.group(1).replace(",", "")
+    adapter_reads = adapt.group(1).replace(",", "")
+    return total_reads, adapter_reads
 
 
 def setup_logging(
@@ -229,6 +232,7 @@ def setup_logging(
     log_file: str | Path | None = None,
     stdout_level: int = logging.INFO,
     file_level: int = logging.DEBUG,
+    log_dir: Path | None = None,
 ) -> None:
     """
     Configure application-wide logging.
@@ -252,7 +256,11 @@ def setup_logging(
 
     # optional file
     if log_file is not None:
-        log_file = Path(log_file)
+        if log_dir is not None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = Path(log_dir) / f"{Path(log_file).stem}_{timestamp}.log"
+        else:
+            log_file = Path(log_file)
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
         fh = logging.FileHandler(log_file)

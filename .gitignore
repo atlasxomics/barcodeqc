@@ -1,6 +1,7 @@
 # Specific stuff
 seqtk-1.4/
 tests/
+*example*
 AGENTS.md
 
 # Byte-compiled / optimized / DLL files

@@ -20,8 +20,8 @@ def ensure_output_dir(output_dir: Path) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
 
-def run_subsample(config: QCConfig) -> Path:
-    ds_path = config.output_dir / f"ds_{config.sample_reads}.fastq.gz"
+def run_subsample(config: QCConfig, output_dir: Path) -> Path:
+    ds_path = output_dir / f"ds_{config.sample_reads}.fastq.gz"
     seqtk_cmd = [
         "seqtk",
         "sample",
@@ -250,3 +250,48 @@ def write_onoff_table(onoff_df: pd.DataFrame, output_dir: Path) -> Path:
     onoff_path = output_dir / "onoff_tissue_table.csv"
     onoff_df.to_csv(onoff_path, index=False)
     return onoff_path
+
+
+def linker_conservation_status(
+    total_reads: int,
+    adapter_reads: int,
+    pass_threshold: float = 0.7,
+) -> tuple[str, float]:
+    if total_reads <= 0:
+        return "CAUTION", 0.0
+    pct = adapter_reads / total_reads
+    status = "PASS" if pct >= pass_threshold else "CAUTION"
+    return status, pct
+
+
+def barcode_check_status(
+    count_table: pd.DataFrame,
+    expect_col: str = "expectMer",
+    frac_col: str = "frac_count",
+    top_n: int = 100,
+) -> tuple[str, int]:
+    top = count_table.sort_values(by=[frac_col], ascending=False).head(top_n)
+    unexpected = int((~top[expect_col]).sum())
+    status = "PASS" if unexpected == 0 else "CAUTION"
+    return status, unexpected
+
+
+def lane_status(
+    bc_table: pd.DataFrame,
+    flag_col: str,
+    channel_col: str = "channel",
+) -> str:
+    flagged = (
+        bc_table.loc[bc_table[flag_col], channel_col]
+        .dropna()
+        .astype(int)
+        .unique()
+        .tolist()
+    )
+    if not flagged:
+        return "PASS"
+    flagged_sorted = sorted(flagged)
+    adjacent = any(
+        b - a == 1 for a, b in zip(flagged_sorted, flagged_sorted[1:])
+    )
+    return "CONTACT SUPPORT" if adjacent else "ACTION REQUIRED"
