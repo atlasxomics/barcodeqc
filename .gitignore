@@ -1,6 +1,7 @@
 # Specific stuff
 seqtk-1.4/
 tests/
+test/
 *example*
 AGENTS.md
 

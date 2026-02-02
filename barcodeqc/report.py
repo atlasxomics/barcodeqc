@@ -7,7 +7,16 @@ import base64
 import pandas as pd
 
 from jinja2 import Template
+from importlib.resources import files
+
 import barcodeqc.utils as utils
+
+
+def _load_static_logo() -> str | None:
+    logo_path = files("barcodeqc") / "data" / "static" / "logo.png"
+    if not logo_path.is_file():
+        return None
+    return _image_data_uri(logo_path)
 
 
 def write_summary_table(
@@ -66,6 +75,8 @@ def generate_report(
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    logo_uri = _load_static_logo()
+
     outputs: dict[str, Path] = {}
     if summary_table is not None:
         target_dir = table_dir or output_dir
@@ -85,19 +96,19 @@ def generate_report(
 <html>
 <head>
   <meta charset="utf-8">
-  <title>{{ sample_name }} barcodeqc Report</title>
+  <title>barcodeqc {{ sample_name }}</title>
   <style>
     :root {
       --bg:#ffffff; --panel:#ffffff; --ink:#1f2937; --sub:#6b7280;
-      --accent:#111827; --pill-bg:#f3f4f6; --muted:#f8fafc; --border:#e5e7eb;
+      --accent:#ffffff; --pill-bg:#0B63FF; --muted:#f8fafc; --border:#e5e7eb;
       --shadow:0 1px 2px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06);
     }
     * { box-sizing:border-box; }
     body {
       margin:0; padding:24px 16px; background:var(--bg); color:var(--ink);
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji','Segoe UI Emoji';
+      font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    h1 { margin:0 0 8px; font-weight:700; letter-spacing:-0.2px; font-size:28px; }
+    h1 { margin:0 0 8px; font-weight:700; letter-spacing:-0.2px; font-size:30px; }
     h2 { font-size:20px; margin:0 0 12px; letter-spacing:-0.1px; }
     .container { max-width:1200px; margin:0 auto; }
     .topbar { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px; }
@@ -137,8 +148,11 @@ def generate_report(
 <body>
   <div class="container">
     <div class="topbar">
-      <h1>{{ sample_name }} barcode_qc Report</h1>
-      <div class="sample-pill">Sample: {{ sample_name }}</div>
+        {% if logo_uri %}
+            <img src="{{ logo_uri }}" alt="logo" style="height:32px;" >
+        {% endif %}
+      <h1>Barcode QC Report</h1>
+      <div class="sample-pill">{{ sample_name }}</div>
     </div>
   <div class="summary-panel row">
     <div class="narrow">
@@ -174,7 +188,7 @@ def generate_report(
   </div>
 
   <div class="row">
-    <h2>Barcode contamination</h2>
+    <h2>Barcode Check</h2>
     {% if figures.bc_contam_l1 %}
     <div class="plot-row">
       <div class="carousel-stage">
@@ -277,6 +291,7 @@ def generate_report(
             if onoff_table is not None else None
         ),
         linker_metrics=linker_metrics,
+        logo_uri=logo_uri,
     )
 
     html_path = output_dir / f"{sample_name}_{file_tag}_report.html"

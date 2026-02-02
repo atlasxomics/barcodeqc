@@ -31,6 +31,7 @@ barcodeqc = [
     "data/position_files/*.csv",
     "data/barcode_files/barcode_A/*.tsv",
     "data/barcode_files/barcode_B/*.tsv",
+    "data/static/*",
 ]
 
 [project.scripts]
