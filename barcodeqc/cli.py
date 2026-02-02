@@ -88,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_parser = subparsers.add_parser(
         "report",
-        help="Generate report from existing run files",
+        help="Generate report from existing run files.",
         prog="barcodeqc report",
     )
     report_parser.add_argument(
@@ -126,6 +126,9 @@ def main(args: argparse.Namespace) -> int:
             logger.error("Sample directory not found: %s", sample_dir)
             return 1
 
+        out_dir = Path.cwd() / args.sample_name
+        out_dir.mkdir(parents=True, exist_ok=True)
+
         figures_dir = sample_dir / "figures"
         tables_dir = sample_dir / "tables"
         figures = (
@@ -152,7 +155,7 @@ def main(args: argparse.Namespace) -> int:
 
         report.generate_report(
             figure_paths=figures,
-            output_dir=sample_dir,
+            output_dir=out_dir,
             sample_name=args.sample_name,
             summary_table=summary,
             onoff_table=onoff,
@@ -160,7 +163,7 @@ def main(args: argparse.Namespace) -> int:
             file_tag="bcQC",
             table_dir=tables_dir if tables_dir.exists() else None,
         )
-        logger.info("Report generated in %s", sample_dir)
+        logger.info("Report generated in %s", out_dir)
         return 0
 
     sample_dir = Path.cwd() / args.sample_name

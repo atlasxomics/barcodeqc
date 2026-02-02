@@ -40,6 +40,7 @@ def qc(
     tissue_position_file: Optional[Path]
 ) -> Path:
 
+    # Setup
     config = QCConfig.from_args(
         sample_name=sample_name,
         r2_path=r2_path,
@@ -50,6 +51,7 @@ def qc(
     )
     config.validate()
     ensure_output_dir(config.output_dir)
+
     output_dir = config.output_dir
     figures_dir = output_dir / "figures"
     tables_dir = output_dir / "tables"
@@ -68,12 +70,15 @@ def qc(
     bcb_file = utils.BARCODE_PATHS[barcode_set]["bcb"]
     bcb_positions = files.open_barcode_file(bcb_file)
 
+    # Run subsample command with seqtk
     ds_path = run_subsample(config, output_dir)
 
+    # Filtering linkers and parse barcodes with cutadapt
     wc_linker1, log_linker1, wc_linker2, log_linker2 = run_cutadapt(
         ds_path, logs_dir
     )
 
+    # Build spatial table
     spatial_table, spatial_table_path = build_spatial_table(
         wc_linker1,
         wc_linker2,
@@ -247,14 +252,13 @@ def qc(
     summary_table = pd.DataFrame(
         {
             "metric": [
-                "Linker 1 conservation",
-                "Linker 2 conservation",
-                "Barcode A check",
-                "Barcode B check",
-                "HI lanes",
-                "LO lanes",
-                "spatial artifacts",
-                "off tissue ratio",
+                "Linker 1 Filter",
+                "Linker 2 Filter",
+                "Barcode A Check",
+                "Barcode B Check",
+                "HI Lanes",
+                "LOW Lanes",
+                "Off-tissue Ratio",
             ],
             "status": [
                 linker_status.get("L1", ("NA", 0.0))[0],
@@ -263,7 +267,6 @@ def qc(
                 barcode_status.get("L2", ("NA", 0))[0],
                 hi_lane_summary,
                 lo_lane_summary,
-                "PASS",
                 off_tissue_ratio,
             ],
         }
