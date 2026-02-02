@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from barcodeqc import qc
-from barcodeqc.utils import setup_logging
+from barcodeqc.logging import setup_logging
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 

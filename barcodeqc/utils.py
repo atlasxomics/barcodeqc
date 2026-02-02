@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import base64
 import logging
-import os
 import pandas as pd
 import re
-import sys
-from datetime import datetime
 
 from importlib.resources import files as resource_files
-from jinja2 import Template
 from pathlib import Path
 
 import barcodeqc.files as files
@@ -80,87 +75,6 @@ def contains_acgt_word(input_list):
     ]
 
 
-def generate_html_with_embedded_images(
-    picList, outPath, sampleName, fileTag='bcQC', noteHTML=''
-):
-    # Template for our HTML document
-
-    html_template = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>AtlasXomics Barcode QC Report</title>
-            <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
-            <style>
-                .fixed-sidebar {
-                    position: fixed;
-                    #top: 60;
-                    height: 100%;
-                    overflow-y: auto;
-                }
-                body {
-                    #padding-top: 70px;
-                    #top: 70px;
-                }
-
-            </style>
-
-
-        </head>
-        <body>
-        <!---
-        <header>
-            <nav class="navbar navbar-dark bg-dark fixed-top">
-                <a class="navbar-brand" href="#">SampleName: {{ sampleName }}</a>
-            </nav>
-        </header>
-        --!>
-            <div class="container-fluid">
-                <div class="row">
-                    <div class="col-3 fixed-sidebar">
-                        <div class="list-group">
-                        <a href="#" class="list-group-item list-group-item-action"><b>SampleName:</b><br>{{ sampleName }}{{ noteHTML }}</a>
-                            {% for file, data_uri in files %}
-                            <a href="#{{ file }}" class="list-group-item list-group-item-action">{{ file }}</a>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    <div class="col-9 offset-3">
-                        {% for file, data_uri in files %}
-                        <h3 id="{{ file }}">{{ file }}</h3>
-                        <img src="{{ data_uri }}" class="img-fluid" alt="{{ file }}">
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
-            <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
-        </body>
-        </html>
-        """
-
-    # Function to get base64 encoded string for an image file
-    def get_image_data_uri(filename):
-        with open(filename, 'rb') as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-            return f'data:image/png;base64,{encoded_string}'
-
-    # Get all .png files in the directory and their base64 encoded strings
-    files_data_uri = [
-        (os.path.basename(file), get_image_data_uri(file)) for file in picList
-    ]
-
-    # Render the HTML with the embedded images
-    template = Template(html_template)
-    html_content = template.render(
-        files=files_data_uri, sampleName=sampleName, noteHTML=noteHTML
-    )
-
-    # Write the HTML content to a file
-    with open(os.path.join(outPath, f'{sampleName}_{fileTag}_report.html'), 'w') as f:
-        f.write(html_content)
-
-
 def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
     '''Merges wild-card output files from cutadapt, then merges with tissue
     position file to create base for _spatialTable.csv.  Returns Dataframe.
@@ -225,45 +139,3 @@ def parse_read_log(log_path: str) -> tuple[str, str]:
     total_reads = tot.group(1).replace(",", "")
     adapter_reads = adapt.group(1).replace(",", "")
     return total_reads, adapter_reads
-
-
-def setup_logging(
-    *,
-    log_file: str | Path | None = None,
-    stdout_level: int = logging.INFO,
-    file_level: int = logging.DEBUG,
-    log_dir: Path | None = None,
-) -> None:
-    """
-    Configure application-wide logging.
-
-    This should be called exactly once, at CLI startup.
-    """
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-    logger.handlers.clear()
-
-    formatter = logging.Formatter(
-        "%(levelname)s - %(asctime)s - %(message)s",
-        "%Y-%m-%d %H:%M:%S",
-    )
-
-    # stdout
-    sh = logging.StreamHandler(sys.stdout)
-    sh.setLevel(stdout_level)
-    sh.setFormatter(formatter)
-    logger.addHandler(sh)
-
-    # optional file
-    if log_file is not None:
-        if log_dir is not None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_file = Path(log_dir) / f"{Path(log_file).stem}_{timestamp}.log"
-        else:
-            log_file = Path(log_file)
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(file_level)
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)

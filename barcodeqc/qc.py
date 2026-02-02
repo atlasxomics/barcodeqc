@@ -10,7 +10,7 @@ import barcodeqc.files as files
 import barcodeqc.plots as plots
 import barcodeqc.report as report
 import barcodeqc.utils as utils
-from barcodeqc.logging_helpers import (
+from barcodeqc.logging import (
     format_hilo_metrics, format_wildcard_metrics
 )
 from barcodeqc.qc_config import QCConfig
