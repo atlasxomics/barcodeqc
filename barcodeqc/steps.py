@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from barcodeqc.qc_config import QCConfig
+from barcodeqc.config import QCConfig
 import barcodeqc.files as files
 
 logger = logging.getLogger(__name__)

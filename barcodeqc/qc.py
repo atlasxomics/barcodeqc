@@ -14,18 +14,20 @@ import barcodeqc.utils as utils
 from barcodeqc.logging import (
     format_hilo_metrics, format_wildcard_metrics
 )
-from barcodeqc.qc_config import QCConfig
-from barcodeqc.qc_steps import (
+from barcodeqc.config import QCConfig
+from barcodeqc.steps import (
     build_count_table,
     build_spatial_table,
     barcode_check_status,
     compute_hi_lo_qc,
     compute_onoff_metrics,
+    ensure_output_dir,
     lane_status,
     linker_conservation_status,
+    run_cutadapt,
+    run_subsample,
     write_onoff_table,
 )
-from barcodeqc.qc_steps import ensure_output_dir, run_cutadapt, run_subsample
 
 logger = logging.getLogger(__name__)
 
