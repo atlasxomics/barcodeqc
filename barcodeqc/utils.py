@@ -53,19 +53,6 @@ BARCODE_PATHS = {
 }
 
 
-def concatenate_2pairs(list1, list2):
-    '''Used to combine barcode A 8mer and barcode B 8mer'''
-    return [b + a for a in list1 for b in list2]
-
-
-def concatenate_2pairsChan(mer1, mer2, chan1, chan2):
-    '''Combined barcode 8mers and row/column indices'''
-    merPairs = [b + a for a in mer1 for b in mer2]
-    chanPairs = [[int(c1), int(c2)] for c1 in chan1 for c2 in chan2]
-
-    return merPairs, chanPairs
-
-
 def contains_acgt_word(input_list):
     '''Function to check for 8-character word made up of A, C, G, T in a list
     and return indices.'''
