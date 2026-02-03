@@ -4,9 +4,14 @@ import logging
 import re
 
 from pathlib import Path
+from shutil import which
 from typing import List
 
 logger = logging.getLogger(__name__)
+
+
+class ExternalDependencyError(RuntimeError):
+    pass
 
 
 def contains_acgt_word(input_list: List[str]) -> List[int]:
@@ -30,3 +35,12 @@ def parse_read_log(log_path: str) -> tuple[str, str]:
     total_reads = tot.group(1).replace(",", "")
     adapter_reads = adapt.group(1).replace(",", "")
     return total_reads, adapter_reads
+
+
+def require_executable(name: str) -> str:
+    exe = which(name)
+    if not exe:
+        raise ExternalDependencyError(
+            f"{name} not found on PATH. Please install {name} and try again."
+        )
+    return exe

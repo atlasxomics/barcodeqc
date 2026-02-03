@@ -13,104 +13,6 @@ import barcodeqc.files as files
 logger = logging.getLogger(__name__)
 
 
-def ensure_output_dir(output_dir: Path) -> None:
-    if not output_dir.exists():
-        logger.debug(f"Output dir {output_dir} not detected, making...")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-
-def run_subsample(config: QCConfig, output_dir: Path) -> Path:
-    ds_path = output_dir / f"ds_{config.sample_reads}.fastq.gz"
-    seqtk_cmd = [
-        "seqtk",
-        "sample",
-        "-s",
-        str(config.random_seed),
-        str(config.r2_path),
-        str(config.sample_reads),
-    ]
-    gzip_cmd = ["gzip"]
-    logger.info("Running subsample ")
-    logger.debug("seqtk cmd: %s", seqtk_cmd)
-    logger.debug("gzip cmd: %s > %s", gzip_cmd, ds_path)
-    with open(ds_path, "wb") as out_f:
-        seqtk_proc = subprocess.Popen(seqtk_cmd, stdout=subprocess.PIPE)
-        gzip_proc = subprocess.run(
-            gzip_cmd,
-            stdin=seqtk_proc.stdout,
-            stdout=out_f,
-            check=True,
-        )
-        if seqtk_proc.stdout is not None:
-            seqtk_proc.stdout.close()
-        seqtk_return = seqtk_proc.wait()
-        if seqtk_return != 0:
-            raise subprocess.CalledProcessError(seqtk_return, seqtk_cmd)
-    logger.info("Completed subsampling")
-    return ds_path
-
-
-def run_cutadapt(
-    ds_path: Path,
-    output_dir: Path,
-    cores: int = 30,
-) -> tuple[Path, Path, Path, Path]:
-    linker1 = "NNNNNNNNGTGGCCGATGTTTCGCATCGGCGTACGACT"
-    linker2 = "NNNNNNNNATCCACGTGCTTGAGAGGCCAGAGCATTCG"
-
-    wc_linker1 = output_dir / "cutadapt_wc_L1.txt"
-    log_linker1 = output_dir / "cutadapt_L1.log"
-    dmuxL1 = [
-        "cutadapt",
-        "-g",
-        f"linker1={linker1}",
-        "-o",
-        "/dev/null",
-        "--action=lowercase",
-        "--cores",
-        str(cores),
-        "--no-indels",
-        "-e",
-        "5",
-        "--wildcard-file",
-        str(wc_linker1),
-        str(ds_path),
-    ]
-
-    wc_linker2 = output_dir / "cutadapt_wc_L2.txt"
-    log_linker2 = output_dir / "cutadapt_L2.log"
-    dmuxL2 = [
-        "cutadapt",
-        "-g",
-        f"linker2={linker2}",
-        "-o",
-        "/dev/null",
-        "--action=lowercase",
-        "--cores",
-        str(cores),
-        "--no-indels",
-        "-e",
-        "5",
-        "--wildcard-file",
-        str(wc_linker2),
-        str(ds_path),
-    ]
-
-    logger.info("Starting dmuxL1")
-    logger.debug("cutadapt L1 cmd: %s > %s", dmuxL1, log_linker1)
-    with open(log_linker1, "w") as log_f:
-        subprocess.run(dmuxL1, stdout=log_f, stderr=log_f, check=True)
-    logger.info("Completed dmuxL1")
-
-    logger.info("Starting dmuxL2")
-    logger.debug("cutadapt L2 cmd: %s > %s", dmuxL2, log_linker2)
-    with open(log_linker2, "w") as log_f:
-        subprocess.run(dmuxL2, stdout=log_f, stderr=log_f, check=True)
-    logger.info("Completed dmuxL2")
-
-    return wc_linker1, log_linker1, wc_linker2, log_linker2
-
-
 def build_spatial_table(
     wc_linker1: Path,
     wc_linker2: Path,
@@ -245,10 +147,10 @@ def compute_onoff_metrics(spatial_table: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def write_onoff_table(onoff_df: pd.DataFrame, output_dir: Path) -> Path:
-    onoff_path = output_dir / "onoff_tissue_table.csv"
-    onoff_df.to_csv(onoff_path, index=False)
-    return onoff_path
+def ensure_output_dir(output_dir: Path) -> None:
+    if not output_dir.exists():
+        logger.debug(f"Output dir {output_dir} not detected, making...")
+        output_dir.mkdir(parents=True, exist_ok=True)
 
 
 def linker_conservation_status(
@@ -346,3 +248,101 @@ def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
     mergedTablePosition.dropna(subset=['row', 'col', 'on_off'], inplace=True)
 
     return mergedTablePosition
+
+
+def run_subsample(config: QCConfig, output_dir: Path) -> Path:
+    ds_path = output_dir / f"ds_{config.sample_reads}.fastq.gz"
+    seqtk_cmd = [
+        "seqtk",
+        "sample",
+        "-s",
+        str(config.random_seed),
+        str(config.r2_path),
+        str(config.sample_reads),
+    ]
+    gzip_cmd = ["gzip"]
+    logger.info("Running subsample ")
+    logger.debug("seqtk cmd: %s", seqtk_cmd)
+    logger.debug("gzip cmd: %s > %s", gzip_cmd, ds_path)
+    with open(ds_path, "wb") as out_f:
+        seqtk_proc = subprocess.Popen(seqtk_cmd, stdout=subprocess.PIPE)
+        gzip_proc = subprocess.run(
+            gzip_cmd,
+            stdin=seqtk_proc.stdout,
+            stdout=out_f,
+            check=True,
+        )
+        if seqtk_proc.stdout is not None:
+            seqtk_proc.stdout.close()
+        seqtk_return = seqtk_proc.wait()
+        if seqtk_return != 0:
+            raise subprocess.CalledProcessError(seqtk_return, seqtk_cmd)
+    logger.info("Completed subsampling")
+    return ds_path
+
+
+def run_cutadapt(
+    ds_path: Path,
+    output_dir: Path,
+    cores: int = 30,
+) -> tuple[Path, Path, Path, Path]:
+    linker1 = "NNNNNNNNGTGGCCGATGTTTCGCATCGGCGTACGACT"
+    linker2 = "NNNNNNNNATCCACGTGCTTGAGAGGCCAGAGCATTCG"
+
+    wc_linker1 = output_dir / "cutadapt_wc_L1.txt"
+    log_linker1 = output_dir / "cutadapt_L1.log"
+    dmuxL1 = [
+        "cutadapt",
+        "-g",
+        f"linker1={linker1}",
+        "-o",
+        "/dev/null",
+        "--action=lowercase",
+        "--cores",
+        str(cores),
+        "--no-indels",
+        "-e",
+        "5",
+        "--wildcard-file",
+        str(wc_linker1),
+        str(ds_path),
+    ]
+
+    wc_linker2 = output_dir / "cutadapt_wc_L2.txt"
+    log_linker2 = output_dir / "cutadapt_L2.log"
+    dmuxL2 = [
+        "cutadapt",
+        "-g",
+        f"linker2={linker2}",
+        "-o",
+        "/dev/null",
+        "--action=lowercase",
+        "--cores",
+        str(cores),
+        "--no-indels",
+        "-e",
+        "5",
+        "--wildcard-file",
+        str(wc_linker2),
+        str(ds_path),
+    ]
+
+    logger.info("Starting dmuxL1")
+    logger.debug("cutadapt L1 cmd: %s > %s", dmuxL1, log_linker1)
+    with open(log_linker1, "w") as log_f:
+        subprocess.run(dmuxL1, stdout=log_f, stderr=log_f, check=True)
+    logger.info("Completed dmuxL1")
+
+    logger.info("Starting dmuxL2")
+    logger.debug("cutadapt L2 cmd: %s > %s", dmuxL2, log_linker2)
+    with open(log_linker2, "w") as log_f:
+        subprocess.run(dmuxL2, stdout=log_f, stderr=log_f, check=True)
+    logger.info("Completed dmuxL2")
+
+    return wc_linker1, log_linker1, wc_linker2, log_linker2
+
+
+def write_onoff_table(onoff_df: pd.DataFrame, output_dir: Path) -> Path:
+    onoff_path = output_dir / "onoff_tissue_table.csv"
+    onoff_df.to_csv(onoff_path, index=False)
+    return onoff_path

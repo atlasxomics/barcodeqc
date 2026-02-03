@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
 import barcodeqc.paths as paths
+from barcodeqc.utils import require_executable, ExternalDependencyError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -54,3 +58,7 @@ class QCConfig:
                 raise FileNotFoundError(
                     f"Could not find tissue_postion file: {self.tissue_position_file}"
                 )
+
+        # Ensure seqtk installed in PATH
+        seqtk = require_executable("seqtk")
+        logger.debug(f"Using {seqtk} for subsampling.")

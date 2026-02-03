@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.10
 """Local CLI wrapper for the Barcode QC workflow."""
 from __future__ import annotations
 

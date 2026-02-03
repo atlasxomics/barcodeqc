@@ -18,6 +18,7 @@ import pandas as pd
 
 from barcodeqc import qc
 from barcodeqc.logging import setup_logging
+from barcodeqc.utils import require_executable, ExternalDependencyError
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 
@@ -165,6 +166,14 @@ def main(args: argparse.Namespace) -> int:
         )
         logger.info("Report generated in %s", out_dir)
         return 0
+
+    # Ensure seqtk installed in PATH for qc
+    try:
+        seqtk = require_executable("seqtk")
+        logger.debug(f"Using {seqtk} for subsampling.")
+    except ExternalDependencyError as e:
+        logger.error(str(e))
+        return 127
 
     sample_dir = Path.cwd() / args.sample_name
     sample_dir.mkdir(parents=True, exist_ok=True)
