@@ -149,9 +149,9 @@ def main(args: argparse.Namespace) -> int:
         linker_metrics = report.load_linker_metrics_from_dir(sample_dir)
 
         if summary is not None:
-            from barcodeqc.qc import _print_summary_table
+            from barcodeqc.report import print_summary_table
 
-            _print_summary_table(summary)
+            print_summary_table(summary)
 
         report.generate_report(
             figure_paths=figures,

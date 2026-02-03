@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import pandas as pd
-import sys
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -274,7 +273,7 @@ def qc(
             ],
         }
     )
-    _print_summary_table(summary_table)
+    report.print_summary_table(summary_table)
     report.generate_report(
         figure_paths=pic_paths,
         output_dir=output_dir,
@@ -288,27 +287,3 @@ def qc(
     logger.info("html report finished.")
 
     return Path(spatial_table_path)
-
-
-def _print_summary_table(summary_table: pd.DataFrame) -> None:
-    if summary_table.empty:
-        return
-
-    headers = ["METRIC", "STATUS"]
-    rows = summary_table[["metric", "status"]].astype(str).values.tolist()
-    widths = [
-        max(len(headers[0]), *(len(r[0]) for r in rows)),
-        max(len(headers[1]), *(len(r[1]) for r in rows)),
-    ]
-
-    def fmt_row(left: str, right: str) -> str:
-        return f"| {left.ljust(widths[0])} | {right.ljust(widths[1])} |"
-
-    border = f"+-{'-' * widths[0]}-+-{'-' * widths[1]}-+"
-
-    print(border, file=sys.stdout)
-    print(fmt_row(headers[0], headers[1]), file=sys.stdout)
-    print(border, file=sys.stdout)
-    for left, right in rows:
-        print(fmt_row(left, right), file=sys.stdout)
-    print(border, file=sys.stdout)

@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 
 import base64
 import pandas as pd
+import sys
 
 from jinja2 import Template
 from importlib.resources import files
@@ -60,6 +61,30 @@ def _split_figures(figure_paths: Iterable[Path]) -> dict[str, list[Path]]:
         else:
             groups["other"].append(p)
     return groups
+
+
+def print_summary_table(summary_table: pd.DataFrame) -> None:
+    if summary_table.empty:
+        return
+
+    headers = ["METRIC", "STATUS"]
+    rows = summary_table[["metric", "status"]].astype(str).values.tolist()
+    widths = [
+        max(len(headers[0]), *(len(r[0]) for r in rows)),
+        max(len(headers[1]), *(len(r[1]) for r in rows)),
+    ]
+
+    def fmt_row(left: str, right: str) -> str:
+        return f"| {left.ljust(widths[0])} | {right.ljust(widths[1])} |"
+
+    border = f"+-{'-' * widths[0]}-+-{'-' * widths[1]}-+"
+
+    print(border, file=sys.stdout)
+    print(fmt_row(headers[0], headers[1]), file=sys.stdout)
+    print(border, file=sys.stdout)
+    for left, right in rows:
+        print(fmt_row(left, right), file=sys.stdout)
+    print(border, file=sys.stdout)
 
 
 def generate_report(
