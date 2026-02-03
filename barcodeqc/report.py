@@ -168,6 +168,12 @@ def generate_report(
     .note { margin-top: 6px; font-size: 12px; color: var(--sub); }
     .onoff-plot { margin-top: 12px; }
     .onoff-plot img { width: 100%; height: auto; max-width: none; background:#000; border-radius:8px; }
+    .layout { display: grid; grid-template-columns: 180px 1fr; gap: 20px; }
+    .sidebar { position: sticky; top: 16px; align-self: start; }
+    .nav { background: transparent; border: none; border-radius: 0; padding: 0; box-shadow: none; }
+    .nav a { color: var(--ink); text-decoration: none; font-size: 13px; display:block; padding: 8px 10px; border-radius: 8px; }
+    .nav a:hover { background: var(--muted); }
+    .nav-list { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:4px; }
   </style>
 </head>
 <body>
@@ -179,23 +185,35 @@ def generate_report(
       <h1>Barcode QC Report</h1>
       <div class="sample-pill">{{ sample_name }}</div>
     </div>
-  <div class="summary-panel row">
+    <div class="layout">
+      <aside class="sidebar">
+        <nav class="nav">
+          <ul class="nav-list">
+            <li><a href="#summary">Summary</a></li>
+            <li><a href="#linker-filtering">Linker Filtering</a></li>
+            <li><a href="#barcode-check">Barcode Check</a></li>
+            <li><a href="#lane-qc">Lane QC</a></li>
+            <li><a href="#onoff">On/Off Tissue</a></li>
+          </ul>
+        </nav>
+      </aside>
+      <main>
+  <div id="summary" class=" row">
     <div class="narrow">
-      <h2>Summary</h2>
-      {% if summary_table %}
-      <table>
-        {% for row in summary_table %}
-        <tr><td>{{ row.metric }}</td><td>{{ row.status }}</td></tr>
-        {% endfor %}
-      </table>
-      {% else %}
-      <div class="note">Summary table not available.</div>
-      {% endif %}
+    <h2>Summary</h2>
+    {% if summary_table %}
+    <table>
+      {% for row in summary_table %}
+      <tr><td>{{ row.metric }}</td><td>{{ row.status }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="note">Summary table not available.</div>
+    {% endif %}
     </div>
-    <div></div>
   </div>
 
-  <div class="row">
+  <div id="linker-filtering" class="row">
     <h2>Linker Filtering</h2>
     {% if linker_metrics %}
     <div class="grid-2">
@@ -212,7 +230,7 @@ def generate_report(
     {% endif %}
   </div>
 
-  <div class="row">
+  <div id="barcode-check" class="row">
     <h2>Barcode Check</h2>
     {% if figures.bc_contam_l1 %}
     <div class="plot-row">
@@ -227,7 +245,7 @@ def generate_report(
     {% endif %}
   </div>
 
-  <div class="row">
+  <div id="lane-qc" class="row">
     <h2>Barcode Lane QC</h2>
     {% if figures.lane_qc_l1 %}
     <div class="plot-row">
@@ -242,7 +260,7 @@ def generate_report(
     {% endif %}
   </div>
 
-  <div class="row">
+  <div id="onoff" class="row">
     <h2>On/Off Tissue Distribution</h2>
     <div class="narrow">
       {% if onoff_table %}
@@ -265,6 +283,8 @@ def generate_report(
   {% if note_html %}
   <div class="note">{{ note_html | safe }}</div>
   {% endif %}
+      </main>
+    </div>
   </div>
   <script>
     const carousels = {
