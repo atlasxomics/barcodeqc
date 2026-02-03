@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
-import barcodeqc.utils as utils
+import barcodeqc.paths as paths
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class QCConfig:
     ) -> "QCConfig":
         output_dir = Path.cwd() / sample_name
         if tissue_position_file is None:
-            tissue_position_file = utils.BARCODE_PATHS[barcode_set]["positions"]
+            tissue_position_file = paths.BARCODE_PATHS[barcode_set]["positions"]
         return cls(
             sample_name=sample_name,
             r2_path=r2_path,

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import barcodeqc.files as files
+import barcodeqc.paths as paths
 import barcodeqc.plots as plots
 import barcodeqc.report as report
 import barcodeqc.utils as utils
@@ -64,10 +65,10 @@ def qc(
         f"Using tissue_postions_file: {config.tissue_position_file}"
     )
 
-    bca_file = utils.BARCODE_PATHS[barcode_set]["bca"]
+    bca_file = paths.BARCODE_PATHS[barcode_set]["bca"]
     bca_positions = files.open_barcode_file(bca_file)
 
-    bcb_file = utils.BARCODE_PATHS[barcode_set]["bcb"]
+    bcb_file = paths.BARCODE_PATHS[barcode_set]["bcb"]
     bcb_positions = files.open_barcode_file(bcb_file)
 
     # Run subsample command with seqtk
