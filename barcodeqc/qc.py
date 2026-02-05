@@ -258,7 +258,7 @@ def qc(
                 "Linker 2 Filter",
                 "Barcode A Check",
                 "Barcode B Check",
-                "HI Lanes",
+                "HIGH Lanes",
                 "LOW Lanes",
                 "Off-tissue Ratio",
             ],
@@ -271,6 +271,15 @@ def qc(
                 lo_lane_summary,
                 off_tissue_ratio,
             ],
+            "description": [
+                "Reads are filtered on the sequence identity of the first ligation linker (L1); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate low quality sequencing.",
+                "Reads are filtered on the sequence identity of the second ligation linker (L2); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate low quality sequencing.",
+                "Barcode A sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences(sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
+                "Barcode B sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences (sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
+                "Reads with >2x the mean read count per row/col are flagged: PASS: no high lanes; ACTION REQUIRED: one or more non-adjacent high lane(s); CONTACT SUPPORT: adjacent high lanes. High lanes can be remediated with computational smoothing.",
+                "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes detected; ACTION REQUIRED: one or more non-adjacent low lane(s); CONTACT SUPPORT: adjacent low lanes. Low lanes can be remediated with computational filling.",
+                "Ratio of reads from off-tissue pixels to on-tissue pixels. On/off pixels are defined by the user-supplied tissue_positions_file; if no file was supplied, all pixels are considered 'on-tissue' and the ratio is 0.  A high ratio can indicate incorrect on/off tissue assignment in AtlasXBrowser or procedural artifacts."
+            ]
         }
     )
     report.print_summary_table(summary_table)

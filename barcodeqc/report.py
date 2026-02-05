@@ -165,6 +165,8 @@ def generate_report(
     .carousel-arrow.next { right: 8px; }
     .hidden { display: none; }
     .summary-panel { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .summary-content { width: 100%; }
+    .summary-table { width: 100%; table-layout: fixed; }
     .note { margin-top: 6px; font-size: 12px; color: var(--sub); }
     .onoff-plot { margin-top: 12px; }
     .onoff-plot img { width: 100%; height: auto; max-width: none; background:#000; border-radius:8px; }
@@ -198,13 +200,22 @@ def generate_report(
         </nav>
       </aside>
       <main>
-  <div id="summary" class=" row">
-    <div class="narrow">
+  <div id="summary" class="summary-panel row">
+    <div class="summary-content">
     <h2>Summary</h2>
     {% if summary_table %}
-    <table>
+    <table class="summary-table">
+      <colgroup>
+        <col style="width: 15%">
+        <col style="width: 15%">
+        <col style="width: 70%">
+      </colgroup>
       {% for row in summary_table %}
-      <tr><td>{{ row.metric }}</td><td>{{ row.status }}</td></tr>
+      <tr>
+        <td>{{ row.metric }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.description }}</td>
+      </tr>
       {% endfor %}
     </table>
     {% else %}
