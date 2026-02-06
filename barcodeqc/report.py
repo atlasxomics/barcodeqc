@@ -122,72 +122,33 @@ def generate_report(
 <head>
   <meta charset="utf-8">
   <title>barcodeqc {{ sample_name }}</title>
-  <style>
-    :root {
-      --bg:#ffffff; --panel:#ffffff; --ink:#1f2937; --sub:#6b7280;
-      --accent:#ffffff; --pill-bg:#0B63FF; --muted:#f8fafc; --border:#e5e7eb;
-      --shadow:0 1px 2px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06);
-    }
-    * { box-sizing:border-box; }
-    body {
-      margin:0; padding:24px 16px; background:var(--bg); color:var(--ink);
-      font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-    h1 { margin:0 0 8px; font-weight:700; letter-spacing:-0.2px; font-size:30px; }
-    h2 { font-size:20px; margin:0 0 12px; letter-spacing:-0.1px; }
-    .container { max-width:1200px; margin:0 auto; }
-    .topbar { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px; }
-    .sample-pill {
-      font-weight:600; color:var(--accent);
-      background:var(--pill-bg); border:1px solid var(--border);
-      padding:6px 10px; border-radius:999px; font-size:12px;
-    }
-    .row { padding: 16px; margin: 16px 0; background: var(--panel); border:1px solid var(--border); border-radius:12px; box-shadow: var(--shadow); }
-    table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--panel); }
-    .narrow { max-width: 50%; }
-    td, th { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 8px 10px; }
-    tr:nth-child(even) td { background: var(--muted); }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; align-items: start; }
-    .plot-row { display: grid; grid-template-columns: 1fr 64px; gap: 12px; align-items: center; }
-    .plot-row img { max-width: 100%; height: auto; background:#fff; border-radius:10px; border:1px solid var(--border); }
-    .nav-arrow { display: inline-flex; width: 44px; height: 44px; align-items: center; justify-content: center;
-                 background: #ffffff; color: var(--ink); text-decoration: none; font-weight: 600; border-radius: 999px; border: 1px solid var(--border); cursor: pointer;
-                 box-shadow: var(--shadow); }
-    .carousel-stage { position: relative; }
-    .carousel-arrow {
-      position: absolute; top: 50%; transform: translateY(-50%);
-      border: 1px solid var(--border); border-radius: 999px; width: 36px; height: 36px; cursor: pointer;
-      background: rgba(255,255,255,0.6); color: var(--ink); font-size: 18px; line-height: 36px; text-align: center;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(2px);
-    }
-    .carousel-arrow.prev { left: 8px; }
-    .carousel-arrow.next { right: 8px; }
-    .hidden { display: none; }
-    .summary-panel { display: grid; grid-template-columns: 1fr; gap: 16px; }
-    .summary-content { width: 100%; }
-    .summary-table { width: 100%; table-layout: fixed; }
-    .note { margin-top: 6px; font-size: 12px; color: var(--sub); }
-    .onoff-plot { margin-top: 12px; }
-    .onoff-plot img { width: 100%; height: auto; max-width: none; background:#000; border-radius:8px; }
-    .layout { display: grid; grid-template-columns: 180px 1fr; gap: 20px; }
-    .sidebar { position: sticky; top: 16px; align-self: start; }
-    .nav { background: transparent; border: none; border-radius: 0; padding: 0; box-shadow: none; }
-    .nav a { color: var(--ink); text-decoration: none; font-size: 13px; display:block; padding: 8px 10px; border-radius: 8px; }
-    .nav a:hover { background: var(--muted); }
-    .nav-list { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:4px; }
-  </style>
+  <link rel="stylesheet" href="{{ css_href }}">
 </head>
 <body>
   <div class="container">
+
     <div class="topbar">
-        {% if logo_uri %}
-            <img src="{{ logo_uri }}" alt="logo" style="height:32px;" >
-        {% endif %}
-      <h1>Barcode QC Report</h1>
-      <div class="sample-pill">{{ sample_name }}</div>
+      <div class="topbar-inner">
+
+        <div class="topbar-logo">
+          {% if logo_uri %}
+            <img src="{{ logo_uri }}" alt="logo" class="logo">
+          {% endif %}
+        </div>
+
+        <div class="topbar-title">
+          <h1>Barcode QC Report</h1>
+        </div>
+
+        <div class="topbar-pill">
+          <div class="sample-pill">{{ sample_name }}</div>
+        </div>
+
+      </div>
     </div>
+
     <div class="layout">
+
       <aside class="sidebar">
         <nav class="nav">
           <ul class="nav-list">
@@ -200,100 +161,111 @@ def generate_report(
         </nav>
       </aside>
       <main>
-  <div id="summary" class="summary-panel row">
-    <div class="summary-content">
-    <h2>Summary</h2>
-    {% if summary_table %}
-    <table class="summary-table">
-      <colgroup>
-        <col style="width: 15%">
-        <col style="width: 15%">
-        <col style="width: 70%">
-      </colgroup>
-      {% for row in summary_table %}
-      <tr>
-        <td>{{ row.metric }}</td>
-        <td>{{ row.status }}</td>
-        <td>{{ row.description }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% else %}
-    <div class="note">Summary table not available.</div>
-    {% endif %}
-    </div>
-  </div>
 
-  <div id="linker-filtering" class="row">
-    <h2>Linker Filtering</h2>
-    {% if linker_metrics %}
-    <div class="grid-2">
-      {% for label, metrics in linker_metrics.items() %}
-      <table>
-        {% for key, value in metrics.items() %}
-        <tr><td>{{ label }} {{ key }}</td><td>{{ value }}</td></tr>
-        {% endfor %}
-      </table>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="note">Linker metrics not available.</div>
-    {% endif %}
-  </div>
+        <div class="intro">
+          <p>
+            `barcodeqc` is a lightweight command-line tool for the rapid evaluation
+            of AtlasXomics epigenomic DBiT-seq experiments. The tool takes fastq
+            files from read2 an input and analyzes the distribution of barcode
+            sequences to screen for the top preliminary failure modes (low linker
+            conservation, mismatched barcodes, missing/overabundent barcodes).
+          </p>
+        </div>
 
-  <div id="barcode-check" class="row">
-    <h2>Barcode Check</h2>
-    {% if figures.bc_contam_l1 %}
-    <div class="plot-row">
-      <div class="carousel-stage">
-        <img id="bc-contam-img" src="{{ figures.bc_contam_l1[0][1] }}" alt="{{ figures.bc_contam_l1[0][0] }}">
-        {% if figures.bc_contam_l2 %}
-        <button class="carousel-arrow prev" data-carousel="bc-contam" data-dir="-1">◀</button>
-        <button class="carousel-arrow next" data-carousel="bc-contam" data-dir="1">▶</button>
+        <div id="summary" class="summary-panel row">
+          <div class="summary-content">
+          <h2>Summary</h2>
+          {% if summary_table %}
+          <table class="summary-table">
+            <colgroup>
+              <col style="width: 15%">
+              <col style="width: 15%">
+              <col style="width: 70%">
+            </colgroup>
+            {% for row in summary_table %}
+            <tr>
+              <td>{{ row.metric }}</td>
+              <td>{{ row.status }}</td>
+              <td>{{ row.description }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <div class="note">Summary table not available.</div>
+          {% endif %}
+          </div>
+        </div>
+
+        <div id="linker-filtering" class="row">
+          <h2>Linker Filtering</h2>
+          {% if linker_metrics %}
+          <div class="grid-2">
+            {% for label, metrics in linker_metrics.items() %}
+            <table>
+              {% for key, value in metrics.items() %}
+              <tr><td>{{ label }} {{ key }}</td><td>{{ value }}</td></tr>
+              {% endfor %}
+            </table>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="note">Linker metrics not available.</div>
+          {% endif %}
+        </div>
+
+        <div id="barcode-check" class="row">
+          <h2>Barcode Check</h2>
+          {% if figures.bc_contam_l1 %}
+          <div class="plot-row">
+            <div class="carousel-stage">
+              <img id="bc-contam-img" src="{{ figures.bc_contam_l1[0][1] }}" alt="{{ figures.bc_contam_l1[0][0] }}">
+              {% if figures.bc_contam_l2 %}
+              <button class="carousel-arrow prev" data-carousel="bc-contam" data-dir="-1">◀</button>
+              <button class="carousel-arrow next" data-carousel="bc-contam" data-dir="1">▶</button>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div id="lane-qc" class="row">
+          <h2>Barcode Lane QC</h2>
+          {% if figures.lane_qc_l1 %}
+          <div class="plot-row">
+            <div class="carousel-stage">
+              <img id="lane-qc-img" src="{{ figures.lane_qc_l1[0][1] }}" alt="{{ figures.lane_qc_l1[0][0] }}">
+              {% if figures.lane_qc_l2 %}
+              <button class="carousel-arrow prev" data-carousel="lane-qc" data-dir="-1">◀</button>
+              <button class="carousel-arrow next" data-carousel="lane-qc" data-dir="1">▶</button>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div id="onoff" class="row">
+          <h2>On/Off Tissue Distribution</h2>
+          <div class="narrow">
+            {% if onoff_table %}
+            <table>
+              {% for row in onoff_table %}
+              <tr><td>{{ row.metric }}</td><td>{{ row.value }}</td></tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <div class="note">On/off tissue metrics not available.</div>
+            {% endif %}
+            <div class="onoff-plot">
+              {% if figures.onoff %}
+              <img src="{{ figures.onoff[0][1] }}" alt="{{ figures.onoff[0][0] }}">
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if note_html %}
+        <div class="note">{{ note_html | safe }}</div>
         {% endif %}
-      </div>
-    </div>
-    {% endif %}
-  </div>
-
-  <div id="lane-qc" class="row">
-    <h2>Barcode Lane QC</h2>
-    {% if figures.lane_qc_l1 %}
-    <div class="plot-row">
-      <div class="carousel-stage">
-        <img id="lane-qc-img" src="{{ figures.lane_qc_l1[0][1] }}" alt="{{ figures.lane_qc_l1[0][0] }}">
-        {% if figures.lane_qc_l2 %}
-        <button class="carousel-arrow prev" data-carousel="lane-qc" data-dir="-1">◀</button>
-        <button class="carousel-arrow next" data-carousel="lane-qc" data-dir="1">▶</button>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-  </div>
-
-  <div id="onoff" class="row">
-    <h2>On/Off Tissue Distribution</h2>
-    <div class="narrow">
-      {% if onoff_table %}
-      <table>
-        {% for row in onoff_table %}
-        <tr><td>{{ row.metric }}</td><td>{{ row.value }}</td></tr>
-        {% endfor %}
-      </table>
-      {% else %}
-      <div class="note">On/off tissue metrics not available.</div>
-      {% endif %}
-      <div class="onoff-plot">
-        {% if figures.onoff %}
-        <img src="{{ figures.onoff[0][1] }}" alt="{{ figures.onoff[0][0] }}">
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  {% if note_html %}
-  <div class="note">{{ note_html | safe }}</div>
-  {% endif %}
       </main>
     </div>
   </div>
@@ -336,6 +308,7 @@ def generate_report(
     template = Template(html_template)
     html_content = template.render(
         sample_name=sample_name,
+        css_href=files("barcodeqc") / "data" / "static" / "report.css",
         note_html=note_html,
         figures=figures,
         summary_table=(
