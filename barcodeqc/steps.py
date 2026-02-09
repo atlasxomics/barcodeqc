@@ -31,7 +31,7 @@ def build_count_table(
     wc_path: Path,
     bcl: pd.DataFrame,
     row_col: str,
-) -> tuple[pd.DataFrame, pd.Series, set[str], int, str, str, pd.Series]:
+) -> tuple[pd.DataFrame, pd.Series, set[str], int, pd.Series]:
 
     whitelist = bcl["sequence"]
     wc_df = files.load_wc_file(wc_path)
@@ -43,13 +43,6 @@ def build_count_table(
     count_table = count_table.sort_values(by=["frac_count"], ascending=False)
     count_table["cumulative_sum"] = count_table["frac_count"].cumsum()
     num_to_ninety = (count_table["cumulative_sum"] <= 0.9).sum()
-
-    try:
-        pct_for_50 = f"{count_table.iloc[:50, 1].sum():.1%}"
-        pct_for_96 = f"{count_table.iloc[:96, 1].sum():.1%}"
-    except Exception:
-        pct_for_50 = "NaN"
-        pct_for_96 = "NaN"
 
     expected_bcs = set(count_table.index.tolist()) & set(whitelist)
 
@@ -67,8 +60,6 @@ def build_count_table(
         unique_counts,
         expected_bcs,
         num_to_ninety,
-        pct_for_50,
-        pct_for_96,
         whitelist
     )
 

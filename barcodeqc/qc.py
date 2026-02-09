@@ -115,8 +115,6 @@ def qc(
             unique_counts,
             expected_bcs,
             numToNinety,
-            pctFor50,
-            pctFor96,
             whitelist
         ) = build_count_table(wc, bcl, rc)
 
@@ -140,8 +138,6 @@ def qc(
                 len(expected_bcs),
                 len(whitelist),
                 total_read_from_expected,
-                pctFor50,
-                pctFor96,
             )
         )
         linker_metrics[eL] = {
@@ -150,8 +146,6 @@ def qc(
             "Number of Unique Barcodes": len(unique_counts),
             "Number Barcodes with 90% of reads": numToNinety,
             "Percent reads in expected barcodes": f"{total_read_from_expected:.1%}",
-            "Percent reads in top 50 8mers": pctFor50,
-            "Percent reads in top 96 8mers": pctFor96,
         }
         linker_status[eL] = linker_conservation_status(
             total_reads,

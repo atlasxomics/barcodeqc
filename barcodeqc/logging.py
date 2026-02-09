@@ -16,8 +16,6 @@ def format_wildcard_metrics(
     expected_count: int,
     whitelist_count: int,
     total_read_from_expected: float,
-    pct_for_50: str,
-    pct_for_96: str,
 ) -> str:
     return (
         f"\n######### Info for {wc_name}\n"
@@ -26,8 +24,6 @@ def format_wildcard_metrics(
         f"Ninety percent (90%) of the reads come from total of {num_to_ninety} 8mers.\n"
         f"Total of {expected_count} out of {whitelist_count} expected 8-mers "
         f"accounted for {total_read_from_expected:.1%} of the reads\n"
-        f"Top 50 8mers represent {pct_for_50} fraction of reads\n"
-        f"Top 96 8mers represent {pct_for_96} fraction of reads"
     )
 
 
