@@ -116,6 +116,13 @@ def generate_report(
         for key, vals in groups.items()
     }
 
+    unexpected_barcodes: list[dict[str, str]] = []
+    unexpected_available = False
+    if table_dir is not None and table_dir.exists():
+        unexpected_barcodes, unexpected_available = (
+            load_unexpected_barcodes_from_dir(table_dir)
+        )
+
     html_template = """
 <!DOCTYPE html>
 <html>
@@ -164,11 +171,10 @@ def generate_report(
 
         <div class="intro">
           <p>
-            `barcodeqc` is a lightweight command-line tool for the rapid evaluation
-            of AtlasXomics epigenomic DBiT-seq experiments. The tool takes fastq
-            files from read2 an input and analyzes the distribution of barcode
-            sequences to screen for the top preliminary failure modes (low linker
-            conservation, mismatched barcodes, missing/overabundent barcodes).
+            This report summaries the main DBiT-seq failure modes upstream of
+            alignment; test results are captured in the Summary table (below).
+            Please review the table and supporting figures linked in the Table
+            of Contents (left).
           </p>
         </div>
 
@@ -215,6 +221,36 @@ def generate_report(
 
         <div id="barcode-check" class="row">
           <h2>Barcode Check</h2>
+
+          {% if unexpected_available %}
+          {% if unexpected_barcodes %}
+          <table class="barcode-unexpected">
+            <thead>
+              <tr>
+                <th>Linker</th>
+                <th>Barcode</th>
+                <th>Reads</th>
+                <th>Fraction</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in unexpected_barcodes %}
+              <tr>
+                <td>{{ row.linker }}</td>
+                <td>{{ row.sequence }}</td>
+                <td>{{ row.count }}</td>
+                <td>{{ row.frac_count }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="note">No unexpected barcodes found in the top 100.</div>
+          {% endif %}
+          {% else %}
+          <div class="note">Unexpected barcode table not available.</div>
+          {% endif %}
+
           {% if figures.bc_contam_l1 %}
           <div class="plot-row">
             <div class="carousel-stage">
@@ -245,21 +281,29 @@ def generate_report(
 
         <div id="onoff" class="row">
           <h2>On/Off Tissue Distribution</h2>
-          <div class="narrow">
-            {% if onoff_table %}
-            <table>
-              {% for row in onoff_table %}
-              <tr><td>{{ row.metric }}</td><td>{{ row.value }}</td></tr>
-              {% endfor %}
-            </table>
-            {% else %}
-            <div class="note">On/off tissue metrics not available.</div>
-            {% endif %}
+
+          <div class="onoff-grid">
+            <div class="onoff-table">
+              {% if onoff_table %}
+              <table>
+                {% for row in onoff_table %}
+                <tr>
+                  <td>{{ row.metric }}</td>
+                  <td>{{ row.value }}</td>
+                </tr>
+                {% endfor %}
+              </table>
+              {% else %}
+              <div class="note">On/off tissue metrics not available.</div>
+              {% endif %}
+            </div>
+
             <div class="onoff-plot">
               {% if figures.onoff %}
               <img src="{{ figures.onoff[0][1] }}" alt="{{ figures.onoff[0][0] }}">
               {% endif %}
             </div>
+
           </div>
         </div>
 
@@ -321,6 +365,8 @@ def generate_report(
         ),
         linker_metrics=linker_metrics,
         logo_uri=logo_uri,
+        unexpected_barcodes=unexpected_barcodes,
+        unexpected_available=unexpected_available,
     )
 
     html_path = output_dir / f"{sample_name}_{file_tag}_report.html"
@@ -361,9 +407,6 @@ def load_linker_metrics_from_dir(
             num_to_ninety = int((sorted_frac.cumsum() <= 0.9).sum())
 
         frac_sorted = count_df["frac_count"].sort_values(ascending=False)
-        pct_for_50 = f"{frac_sorted.iloc[:50].sum():.1%}"
-        pct_for_96 = f"{frac_sorted.iloc[:96].sum():.1%}"
-
         if "expectMer" in count_df.columns:
             expected_mask = count_df["expectMer"].astype(str).str.lower().isin(
                 ["true", "1"]
@@ -380,8 +423,80 @@ def load_linker_metrics_from_dir(
             "Number of Unique Barcodes": len(count_df),
             "Number Barcodes with 90% of reads": num_to_ninety,
             "Percent reads in expected barcodes": f"{total_read_from_expected:.1%}",
-            "Percent reads in top 50 8mers": pct_for_50,
-            "Percent reads in top 96 8mers": pct_for_96,
         }
 
     return metrics or None
+
+
+def load_unexpected_barcodes_from_dir(
+    tables_dir: Path,
+    top_n: int = 100,
+) -> tuple[list[dict[str, str]], bool]:
+    rows: list[dict[str, str]] = []
+    available = False
+    for label in ("L1", "L2"):
+        count_path = tables_dir / f"{label}_counts.csv"
+        if not count_path.exists():
+            continue
+
+        count_df = pd.read_csv(count_path)
+        if "expectMer" not in count_df.columns:
+            continue
+
+        available = True
+        sort_col = None
+        if "count" in count_df.columns:
+            sort_col = "count"
+        elif "frac_count" in count_df.columns:
+            sort_col = "frac_count"
+        if sort_col:
+            count_df = count_df.sort_values(sort_col, ascending=False)
+
+        top = count_df.head(top_n).copy()
+        expected_mask = top["expectMer"].astype(str).str.lower().isin(
+            ["true", "1", "t", "yes"]
+        )
+        unexpected = top.loc[~expected_mask]
+        if unexpected.empty:
+            continue
+
+        if "sequence" in unexpected.columns:
+            seq_col = "sequence"
+        else:
+            fallback_cols = [
+                c for c in unexpected.columns if not c.startswith("Unnamed")
+            ]
+            seq_col = fallback_cols[0] if fallback_cols else unexpected.columns[0]
+
+        for _, row in unexpected.iterrows():
+            count_val = row["count"] if "count" in unexpected.columns else None
+            frac_val = (
+                row["frac_count"]
+                if "frac_count" in unexpected.columns
+                else None
+            )
+            if pd.notna(count_val):
+                try:
+                    count_str = f"{int(count_val):,}"
+                except (TypeError, ValueError):
+                    count_str = str(count_val)
+            else:
+                count_str = "NA"
+            if pd.notna(frac_val):
+                try:
+                    frac_str = f"{float(frac_val):.2%}"
+                except (TypeError, ValueError):
+                    frac_str = str(frac_val)
+            else:
+                frac_str = "NA"
+
+            rows.append(
+                {
+                    "linker": label,
+                    "sequence": str(row[seq_col]),
+                    "count": count_str,
+                    "frac_count": frac_str,
+                }
+            )
+
+    return rows, available
