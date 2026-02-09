@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from shutil import which
 from typing import List
+import gzip
 
 logger = logging.getLogger(__name__)
 
@@ -44,3 +45,16 @@ def require_executable(name: str) -> str:
             f"{name} not found on PATH. Please install {name} and try again."
         )
     return exe
+
+
+def count_fastq_reads(path: Path) -> int:
+    opener = gzip.open if path.suffix in {".gz", ".gzip"} else open
+    line_count = 0
+    with opener(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            line_count += chunk.count(b"\n")
+    if line_count % 4 != 0:
+        raise ValueError(
+            f"Fastq file has {line_count} lines (not divisible by 4): {path}"
+        )
+    return line_count // 4

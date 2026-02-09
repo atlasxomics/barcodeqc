@@ -172,21 +172,48 @@ def lane_status(
     bc_table: pd.DataFrame,
     flag_col: str,
     channel_col: str = "channel",
+    edge_adjacent_ok: bool = False,
 ) -> str:
-    flagged = (
-        bc_table.loc[bc_table[flag_col], channel_col]
-        .dropna()
-        .astype(int)
-        .unique()
-        .tolist()
-    )
+    flagged_series = pd.to_numeric(
+        bc_table.loc[bc_table[flag_col], channel_col],
+        errors="coerce",
+    ).dropna()
+    flagged = flagged_series.astype(int).unique().tolist()
     if not flagged:
         return "PASS"
     flagged_sorted = sorted(flagged)
     adjacent = any(
         b - a == 1 for a, b in zip(flagged_sorted, flagged_sorted[1:])
     )
-    return "CONTACT SUPPORT" if adjacent else "ACTION REQUIRED"
+    if not adjacent:
+        return "ACTION REQUIRED"
+    if not edge_adjacent_ok:
+        return "CONTACT SUPPORT"
+
+    all_channels = pd.to_numeric(
+        bc_table[channel_col],
+        errors="coerce",
+    ).dropna()
+    if all_channels.empty:
+        return "CONTACT SUPPORT"
+    min_channel = int(all_channels.min())
+    max_channel = int(all_channels.max())
+
+    runs: list[tuple[int, int]] = []
+    run_start = run_end = flagged_sorted[0]
+    for val in flagged_sorted[1:]:
+        if val == run_end + 1:
+            run_end = val
+        else:
+            runs.append((run_start, run_end))
+            run_start = run_end = val
+    runs.append((run_start, run_end))
+
+    for start, end in runs:
+        if start == min_channel or end == max_channel:
+            continue
+        return "CONTACT SUPPORT"
+    return "ACTION REQUIRED"
 
 
 def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):

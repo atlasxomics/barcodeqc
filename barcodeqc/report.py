@@ -11,6 +11,8 @@ from jinja2 import Template
 from importlib.resources import files
 
 import barcodeqc.utils as utils
+import barcodeqc.paths as bq_paths
+import barcodeqc.files as bq_files
 
 
 def _load_static_logo() -> str | None:
@@ -31,10 +33,62 @@ def write_summary_table(
     return out_path
 
 
+def write_input_params(
+    input_params: list[dict[str, str]],
+    output_dir: Path,
+    filename: str = "input_parameters.json",
+) -> Path:
+    import json
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / filename
+    out_path.write_text(
+        json.dumps(input_params, indent=2, ensure_ascii=True)
+    )
+    return out_path
+
+
 def _image_data_uri(path: Path) -> str:
     with open(path, "rb") as image_file:
         encoded = base64.b64encode(image_file.read()).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
+
+
+def _figure_html(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".svg"}:
+        data_uri = _image_data_uri(path)
+        return f'<img src="{data_uri}" alt="{path.name}">'
+    if suffix == ".html":
+        return path.read_text()
+    return f'<div class="note">Unsupported figure: {path.name}</div>'
+
+
+def _barcode_set_from_params(
+    input_params: Optional[list[dict[str, str]]],
+) -> Optional[str]:
+    if not input_params:
+        return None
+    for item in input_params:
+        if item.get("label") == "Barcode File":
+            return item.get("value")
+    return None
+
+
+def _top_n_by_label_from_barcode_set(
+    barcode_set: Optional[str],
+) -> Optional[dict[str, int]]:
+    if not barcode_set:
+        return None
+    paths = bq_paths.BARCODE_PATHS.get(barcode_set)
+    if not paths:
+        return None
+    try:
+        bca = bq_files.open_barcode_file(paths["bca"])
+        bcb = bq_files.open_barcode_file(paths["bcb"])
+    except Exception:
+        return None
+    return {"L1": len(bca), "L2": len(bcb)}
 
 
 def _split_figures(figure_paths: Iterable[Path]) -> dict[str, list[Path]]:
@@ -95,6 +149,7 @@ def generate_report(
     summary_table: Optional[pd.DataFrame] = None,
     linker_metrics: Optional[dict[str, dict[str, str | int | float]]] = None,
     onoff_table: Optional[pd.DataFrame] = None,
+    input_params: Optional[list[dict[str, str]]] = None,
     file_tag: str = "bcQC",
     table_dir: Optional[Path] = None,
 ) -> dict[str, Path]:
@@ -110,17 +165,47 @@ def generate_report(
             target_dir,
         )
 
-    groups = _split_figures(figure_paths)
+    figure_list = list(figure_paths)
+    by_stem: dict[str, Path] = {}
+    for path in figure_list:
+        stem = path.stem
+        if stem not in by_stem:
+            by_stem[stem] = path
+            continue
+        existing = by_stem[stem]
+        if existing.suffix.lower() != ".html" and path.suffix.lower() == ".html":
+            by_stem[stem] = path
+    groups = _split_figures(by_stem.values())
     figures = {
-        key: [(_p.name, _image_data_uri(_p)) for _p in vals]
+        key: [_figure_html(_p) for _p in vals]
         for key, vals in groups.items()
     }
+    bc_contam_figures = figures.get("bc_contam_l1", []) + figures.get(
+        "bc_contam_l2", []
+    )
+    lane_qc_figures = figures.get("lane_qc_l1", []) + figures.get(
+        "lane_qc_l2", []
+    )
 
-    unexpected_barcodes: list[dict[str, str]] = []
+    bc_contam_labels: list[str] = []
+    if figures["bc_contam_l1"]:
+        bc_contam_labels.append("L1")
+    if figures["bc_contam_l2"]:
+        bc_contam_labels.append("L2")
+
+    unexpected_barcodes: dict[str, list[dict[str, str]] | None] = {}
     unexpected_available = False
+    unexpected_top_n = {"L1": 100, "L2": 100}
     if table_dir is not None and table_dir.exists():
+        barcode_set = _barcode_set_from_params(input_params)
+        top_n_by_label = _top_n_by_label_from_barcode_set(barcode_set)
+        if top_n_by_label:
+            unexpected_top_n.update(top_n_by_label)
         unexpected_barcodes, unexpected_available = (
-            load_unexpected_barcodes_from_dir(table_dir)
+            load_unexpected_barcodes_from_dir(
+                table_dir,
+                top_n_by_label=top_n_by_label,
+            )
         )
 
     html_template = """
@@ -130,6 +215,7 @@ def generate_report(
   <meta charset="utf-8">
   <title>barcodeqc {{ sample_name }}</title>
   <link rel="stylesheet" href="{{ css_href }}">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -178,6 +264,21 @@ def generate_report(
           </p>
         </div>
 
+        {% if input_params %}
+        <div class="input-metrics">
+          <div class="input-metrics-grid">
+            {% for item in input_params %}
+            <div class="metric-card">
+              <div class="metric-value">{{ item.value }}</div>
+              <div class="metric-label">{{ item.label }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <div class="note">Input parameters not available.</div>
+        {% endif %}
+
         <div id="summary" class="summary-panel row">
           <div class="summary-content">
           <h2>Summary</h2>
@@ -191,7 +292,8 @@ def generate_report(
             {% for row in summary_table %}
             <tr>
               <td>{{ row.metric }}</td>
-              <td>{{ row.status }}</td>
+              {% set status_key = row.status | lower | replace(' ', '-') %}
+              <td class="status {{ status_key }}">{{ row.status }}</td>
               <td>{{ row.description }}</td>
             </tr>
             {% endfor %}
@@ -221,41 +323,62 @@ def generate_report(
 
         <div id="barcode-check" class="row">
           <h2>Barcode Check</h2>
-
           {% if unexpected_available %}
-          {% if unexpected_barcodes %}
-          <table class="barcode-unexpected">
-            <thead>
-              <tr>
-                <th>Linker</th>
-                <th>Barcode</th>
-                <th>Reads</th>
-                <th>Fraction</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in unexpected_barcodes %}
-              <tr>
-                <td>{{ row.linker }}</td>
-                <td>{{ row.sequence }}</td>
-                <td>{{ row.count }}</td>
-                <td>{{ row.frac_count }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          {% if bc_contam_labels %}
+          <div class="barcode-table-carousel">
+            {% for label in bc_contam_labels %}
+            {% set rows = unexpected_barcodes.get(label) %}
+            <div class="carousel-table{% if not loop.first %} hidden{% endif %}" data-carousel="bc-contam">
+              <div class="table-title">{{ label }} unexpected barcodes in top {{ unexpected_top_n.get(label, 100) }} barcodes</div>
+              {% if rows is none %}
+              <div class="note">Unexpected barcode table not available.</div>
+              {% else %}
+              <div class="scroll-table">
+              <table class="barcode-unexpected">
+                <thead>
+                  <tr>
+                    <th>Barcode</th>
+                    <th>Reads</th>
+                    <th>Fraction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if rows %}
+                  {% for row in rows %}
+                  <tr>
+                    <td>{{ row.sequence }}</td>
+                    <td>{{ row.count }}</td>
+                    <td>{{ row.frac_count }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% else %}
+                  <tr>
+                    <td colspan="3">No unexpected barcodes found in the top {{ unexpected_top_n.get(label, 100) }}.</td>
+                  </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
           {% else %}
-          <div class="note">No unexpected barcodes found in the top 100.</div>
+          <div class="note">Unexpected barcode table not available.</div>
           {% endif %}
           {% else %}
           <div class="note">Unexpected barcode table not available.</div>
           {% endif %}
 
-          {% if figures.bc_contam_l1 %}
+          {% if bc_contam_figures %}
           <div class="plot-row">
             <div class="carousel-stage">
-              <img id="bc-contam-img" src="{{ figures.bc_contam_l1[0][1] }}" alt="{{ figures.bc_contam_l1[0][0] }}">
-              {% if figures.bc_contam_l2 %}
+              {% for fig in bc_contam_figures %}
+              <div class="carousel-figure{% if not loop.first %} hidden{% endif %}" data-carousel="bc-contam">
+                {{ fig | safe }}
+              </div>
+              {% endfor %}
+              {% if bc_contam_figures|length > 1 %}
               <button class="carousel-arrow prev" data-carousel="bc-contam" data-dir="-1">◀</button>
               <button class="carousel-arrow next" data-carousel="bc-contam" data-dir="1">▶</button>
               {% endif %}
@@ -266,11 +389,15 @@ def generate_report(
 
         <div id="lane-qc" class="row">
           <h2>Barcode Lane QC</h2>
-          {% if figures.lane_qc_l1 %}
+          {% if lane_qc_figures %}
           <div class="plot-row">
             <div class="carousel-stage">
-              <img id="lane-qc-img" src="{{ figures.lane_qc_l1[0][1] }}" alt="{{ figures.lane_qc_l1[0][0] }}">
-              {% if figures.lane_qc_l2 %}
+              {% for fig in lane_qc_figures %}
+              <div class="carousel-figure{% if not loop.first %} hidden{% endif %}" data-carousel="lane-qc">
+                {{ fig | safe }}
+              </div>
+              {% endfor %}
+              {% if lane_qc_figures|length > 1 %}
               <button class="carousel-arrow prev" data-carousel="lane-qc" data-dir="-1">◀</button>
               <button class="carousel-arrow next" data-carousel="lane-qc" data-dir="1">▶</button>
               {% endif %}
@@ -300,7 +427,9 @@ def generate_report(
 
             <div class="onoff-plot">
               {% if figures.onoff %}
-              <img src="{{ figures.onoff[0][1] }}" alt="{{ figures.onoff[0][0] }}">
+              <div class="plotly-figure">
+                {{ figures.onoff[0] | safe }}
+              </div>
               {% endif %}
             </div>
 
@@ -314,26 +443,29 @@ def generate_report(
     </div>
   </div>
   <script>
-    const carousels = {
-      "bc-contam": [
-        {% if figures.bc_contam_l1 %}"{{ figures.bc_contam_l1[0][1] }}",{% endif %}
-        {% if figures.bc_contam_l2 %}"{{ figures.bc_contam_l2[0][1] }}"{% endif %}
-      ],
-      "lane-qc": [
-        {% if figures.lane_qc_l1 %}"{{ figures.lane_qc_l1[0][1] }}",{% endif %}
-        {% if figures.lane_qc_l2 %}"{{ figures.lane_qc_l2[0][1] }}"{% endif %}
-      ]
-    };
-
     function updateCarousel(name, dir) {
-      const imgs = carousels[name] || [];
-      if (!imgs.length) return;
-      const imgEl = document.getElementById(`${name}-img`);
+      const items = document.querySelectorAll(`.carousel-figure[data-carousel="${name}"]`);
+      if (!items.length) return;
+      const host = document.documentElement;
       const idxKey = `data-${name}-idx`;
-      const cur = Number(imgEl.getAttribute(idxKey) || 0);
-      const next = (cur + dir + imgs.length) % imgs.length;
-      imgEl.src = imgs[next];
-      imgEl.setAttribute(idxKey, String(next));
+      const cur = Number(host.getAttribute(idxKey) || 0);
+      const next = (cur + dir + items.length) % items.length;
+      items.forEach((item, idx) => {
+        item.classList.toggle('hidden', idx !== next);
+      });
+      host.setAttribute(idxKey, String(next));
+      const visible = items[next].querySelectorAll('.plotly-graph-div');
+      if (window.Plotly && visible.length) {
+        setTimeout(() => {
+          visible.forEach((el) => Plotly.Plots.resize(el));
+        }, 0);
+      }
+      const tables = document.querySelectorAll(`.carousel-table[data-carousel="${name}"]`);
+      if (tables.length) {
+        tables.forEach((table, idx) => {
+          table.classList.toggle('hidden', idx !== next);
+        });
+      }
     }
 
     document.addEventListener('click', (e) => {
@@ -343,6 +475,12 @@ def generate_report(
         const dir = Number(btn.getAttribute('data-dir') || 0);
         updateCarousel(name, dir);
       }
+    });
+    window.addEventListener('load', () => {
+      if (!window.Plotly) return;
+      document.querySelectorAll('.plotly-graph-div').forEach((el) => {
+        Plotly.Plots.resize(el);
+      });
     });
   </script>
 </body>
@@ -363,10 +501,15 @@ def generate_report(
             onoff_table.to_dict(orient="records")
             if onoff_table is not None else None
         ),
+        input_params=input_params,
         linker_metrics=linker_metrics,
         logo_uri=logo_uri,
         unexpected_barcodes=unexpected_barcodes,
         unexpected_available=unexpected_available,
+        bc_contam_labels=bc_contam_labels,
+        bc_contam_figures=bc_contam_figures,
+        lane_qc_figures=lane_qc_figures,
+        unexpected_top_n=unexpected_top_n,
     )
 
     html_path = output_dir / f"{sample_name}_{file_tag}_report.html"
@@ -420,6 +563,11 @@ def load_linker_metrics_from_dir(
         metrics[label] = {
             "Total Reads": total_reads,
             "Total with Linker": adapter_reads,
+            "Percent Pass Filtering": (
+                f"{(adapter_reads / total_reads):.1%}"
+                if total_reads > 0
+                else "NA"
+            ),
             "Number of Unique Barcodes": len(count_df),
             "Number Barcodes with 90% of reads": num_to_ninety,
             "Percent reads in expected barcodes": f"{total_read_from_expected:.1%}",
@@ -428,11 +576,42 @@ def load_linker_metrics_from_dir(
     return metrics or None
 
 
+def load_input_params_from_dir(
+    sample_dir: Path,
+    filename: str = "input_parameters.json",
+) -> Optional[list[dict[str, str]]]:
+    tables_dir = sample_dir / "tables"
+    json_path = tables_dir / filename
+    if not json_path.exists():
+        json_path = sample_dir / filename
+    if not json_path.exists():
+        return None
+    import json
+
+    try:
+        data = json.loads(json_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    cleaned: list[dict[str, str]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label", "")).strip()
+        value = str(item.get("value", "")).strip()
+        if not label and not value:
+            continue
+        cleaned.append({"label": label, "value": value})
+    return cleaned or None
+
+
 def load_unexpected_barcodes_from_dir(
     tables_dir: Path,
     top_n: int = 100,
-) -> tuple[list[dict[str, str]], bool]:
-    rows: list[dict[str, str]] = []
+    top_n_by_label: Optional[dict[str, int]] = None,
+) -> tuple[dict[str, list[dict[str, str]] | None], bool]:
+    rows: dict[str, list[dict[str, str]] | None] = {"L1": None, "L2": None}
     available = False
     for label in ("L1", "L2"):
         count_path = tables_dir / f"{label}_counts.csv"
@@ -444,6 +623,7 @@ def load_unexpected_barcodes_from_dir(
             continue
 
         available = True
+        rows[label] = []
         sort_col = None
         if "count" in count_df.columns:
             sort_col = "count"
@@ -452,7 +632,8 @@ def load_unexpected_barcodes_from_dir(
         if sort_col:
             count_df = count_df.sort_values(sort_col, ascending=False)
 
-        top = count_df.head(top_n).copy()
+        label_top_n = top_n_by_label.get(label, top_n) if top_n_by_label else top_n
+        top = count_df.head(label_top_n).copy()
         expected_mask = top["expectMer"].astype(str).str.lower().isin(
             ["true", "1", "t", "yes"]
         )
@@ -490,9 +671,8 @@ def load_unexpected_barcodes_from_dir(
             else:
                 frac_str = "NA"
 
-            rows.append(
+            rows[label].append(
                 {
-                    "linker": label,
                     "sequence": str(row[seq_col]),
                     "count": count_str,
                     "frac_count": frac_str,

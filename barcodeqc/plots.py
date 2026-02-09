@@ -1,12 +1,13 @@
 import logging
-import matplotlib.pyplot as plt
+import warnings
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import warnings
-
-from matplotlib.ticker import FuncFormatter
-from pathlib import Path
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
+from scipy.stats import gaussian_kde
 
 logger = logging.getLogger(__name__)
 
@@ -24,48 +25,86 @@ def create_density_plot(
     """Generate and save a density plot; used downstream to plot the
     distribution of counts per barcode (_denseOnOff.png').
     """
-    plt.figure(figsize=(6, 6))
-
-    # Use the original palette for up to two groups
-    palette_full = sns.color_palette("bright", 10)
-    palette = [palette_full[0], palette_full[3]]
-
-    # Get unique, non-null groups
-    groups = [g for g in dataframe[group_column].dropna().unique()
-              if len(dataframe[dataframe[group_column] == g]) > 0]
+    groups = [
+        g for g in dataframe[group_column].dropna().unique()
+        if len(dataframe[dataframe[group_column] == g]) > 0
+    ]
 
     if len(groups) == 0:
         logger.debug("No non-empty groups to plot in density plot.")
         return
 
-    # Plot each non-empty group with the correct color
+    palette = ["#1f77b4", "#2ca02c"]
+    fig = go.Figure()
+
     for idx, group in enumerate(groups):
         group_df = dataframe[dataframe[group_column] == group]
-        sns.kdeplot(
-            data=group_df,
-            x=data_column,
-            bw_adjust=1.5,
-            log_scale=log10,
-            fill=True,
-            color=palette[idx],
-            label=f"{group}"
+        values = pd.to_numeric(group_df[data_column], errors="coerce").dropna()
+        values = values[values > 0]
+        if values.empty:
+            continue
+
+        if log10:
+            log_vals = np.log10(values)
+            kde = gaussian_kde(log_vals)
+            xs = np.linspace(
+                max(log_vals.min(), 0),
+                log_vals.max(),
+                300,
+            )
+            ys = kde(xs)
+            xs_plot = np.power(10, xs)
+        else:
+            kde = gaussian_kde(values)
+            xs_plot = np.linspace(0, min(values.max(), 10000), 300)
+            ys = kde(xs_plot)
+
+        fig.add_trace(
+            go.Scatter(
+                x=xs_plot,
+                y=ys,
+                mode="lines",
+                line=dict(color=palette[idx % len(palette)], width=2),
+                fill="tozeroy",
+                name=str(group),
+            )
         )
 
     if log10:
         x_label = x_label + " (log scaled)"
 
-    plt.title(plotTitle, fontsize=16, fontweight='bold')
-    plt.xlabel(x_label, fontsize=14, fontweight='bold')
-    plt.ylabel(y_label, fontsize=14, fontweight='bold')
-    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{y:.2f}'))
-    plt.legend(loc='upper right', frameon=False)
+    fig.update_layout(
+        title=plotTitle,
+        xaxis_title=x_label,
+        yaxis_title=y_label,
+        template="plotly_white",
+        height=360,
+        margin=dict(l=40, r=20, t=50, b=40),
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.92,
+            xanchor="right",
+            x=0.96,
+            font=dict(size=14),
+        ),
+        autosize=True,
+    )
+    fig.update_yaxes(tickformat=".2f")
     if log10:
-        plt.xscale('symlog', linthresh=1)
-        plt.xlim(0, 10000)
+        fig.update_xaxes(type="log", range=[0, 4])
     else:
-        plt.xlim(0, 10000)
-    plt.savefig(f'{outPath}', dpi=300)
-    plt.close()
+        fig.update_xaxes(range=[0, 10000])
+
+    outpath = Path(outPath)
+    outpath.parent.mkdir(parents=True, exist_ok=True)
+    pio.write_html(
+        fig,
+        file=str(outpath),
+        include_plotlyjs=False,
+        full_html=False,
+        config={"responsive": True, "displaylogo": False},
+    )
 
 
 def create_heatmap(
@@ -97,33 +136,45 @@ def create_heatmap(
             if vmax is not None:
                 vmax = np.log10(vmax)
 
-    # Create the heatmap
-    fig, ax = plt.subplots(figsize=(15, 12))
+    colorscale = colorMap
+    reversescale = False
+    if isinstance(colorMap, str) and colorMap.endswith("_r"):
+        colorscale = colorMap[:-2]
+        reversescale = True
 
-    im = ax.imshow(matrix, vmin=vmin, vmax=vmax, cmap=colorMap)
-
-    # Add labels
-    ax.set_xticks(range(len(matrix.columns)))
-    ax.set_yticks(range(len(matrix.index)))
-    ax.set_xticklabels(matrix.columns, rotation=90, fontsize=6)
-    ax.set_yticklabels(matrix.index, fontsize=6)
-
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=matrix.values,
+            x=matrix.columns.astype(str),
+            y=matrix.index.astype(str),
+            colorscale=colorscale,
+            reversescale=reversescale,
+            zmin=vmin,
+            zmax=vmax,
+            colorbar=dict(title=cbLbl),
+        )
+    )
+    fig.update_layout(
+        template="plotly_white",
+        height=500,
+        margin=dict(l=40, r=20, t=40, b=40),
+        autosize=True,
+    )
     if axesOff:
-        plt.axis('off')
+        fig.update_xaxes(visible=False)
+        fig.update_yaxes(visible=False)
 
-    # Add colorbar
-    cbar = ax.figure.colorbar(im, ax=ax)
-    # cbar.set_label(cbLbl, rotation=270)  # changed to add labelpad
-    cbar.set_label(cbLbl, rotation=270, labelpad=15)
-
-    plt.tight_layout()  # Automatically adjust subplot parameters
-
-    # save the plot
-    # plt.savefig(outPath)  # change to reduce whitespace
-    plt.savefig(outPath, bbox_inches='tight', pad_inches=0.1)
+    outpath = Path(outPath)
+    outpath.parent.mkdir(parents=True, exist_ok=True)
+    pio.write_html(
+        fig,
+        file=str(outpath),
+        include_plotlyjs=False,
+        full_html=False,
+        config={"responsive": True, "displaylogo": False},
+    )
 
     logger.debug(f"create_heatmap: Saving to {outPath}")
-    plt.close()
 
     return matrix
 
@@ -169,55 +220,88 @@ def hilo_plot(
     lower = mean / 2
     upper = mean * 2
 
-    # ---- Plot ----
-    fig, ax = plt.subplots(figsize=(20, 5))
-
-    df.plot(
-        kind="bar",
-        x=xval,
-        y=yval,
-        ax=ax,
-        legend=False,
-    )
-
-    ax.set_xticks(range(len(df)))
     labels = df[label_col].astype(str).tolist()
+    x_vals = list(range(len(df)))
+
+    channel_raw = pd.to_numeric(df[xval], errors="coerce")
+    channel_vals = channel_raw.map(
+        lambda v: str(int(v)) if pd.notna(v) else "NA"
+    )
+    customdata = np.column_stack([labels, channel_vals])
+
+    fig = go.Figure(
+        data=go.Bar(
+            x=x_vals,
+            y=y,
+            marker_color="#225789",
+            customdata=customdata,
+            hovertemplate=(
+                "Barcode: %{customdata[0]}<br>"
+                "Channel: %{customdata[1]}<br>"
+                "%{y:.4f}<extra></extra>"
+            ),
+        )
+    )
+    if "L1" in file_name:
+        title_text = "Barcode A: Read Fraction, sorted by channel"
+    elif "L2" in file_name:
+        title_text = "Barcode B: Read Fraction, sorted by channel"
+    else:
+        title_text = None
+
     n_labels = len(labels)
     if n_labels > 0:
         step = max(1, n_labels // 40)
-        shown = [lb if i % step == 0 else "" for i, lb in enumerate(labels)]
-        ax.set_xticklabels(shown, rotation=90, fontsize=6)
+        tickvals = [i for i in range(n_labels) if i % step == 0]
+        ticktext = [labels[i] for i in tickvals]
+        fig.update_xaxes(
+            tickmode="array", tickvals=tickvals, ticktext=ticktext
+        )
 
-    ax.axhline(
-        mean,
-        color="tab:gray",
-        linestyle="--",
-        linewidth=0.8,
-        label=f"mean: {mean:.3f}",
+    fig.add_hline(
+        y=mean,
+        line_dash="dash",
+        line_color="gray",
+        annotation_text=f"mean: {mean:.3f}",
+        annotation_position="top right",
+        annotation_bgcolor="rgba(255,255,255,0.75)",
     )
-    ax.axhline(
-        lower,
-        color="tab:red",
-        linestyle="--",
-        linewidth=0.8,
-        label=f"0.5× mean: {lower:.3f}",
+    fig.add_hline(
+        y=lower, line_dash="dash",
+        line_color="red",
+        annotation_text=f"0.5× mean: {lower:.3f}",
+        annotation_position="top right",
+        annotation_bgcolor="rgba(255,255,255,0.75)",
     )
-    ax.axhline(
-        upper,
-        color="tab:red",
-        linestyle="--",
-        linewidth=0.8,
-        label=f"2× mean: {upper:.3f}",
+    fig.add_hline(
+        y=upper,
+        line_dash="dash",
+        line_color="red",
+        annotation_text=f"2× mean: {upper:.3f}",
+        annotation_position="top right",
+        annotation_bgcolor="rgba(255,255,255,0.75)",
     )
 
-    ax.legend(loc="upper right")
-    fig.tight_layout()
+    fig.update_layout(
+        template="plotly_white",
+        height=320,
+        margin=dict(l=60, r=20, t=50, b=60),
+        autosize=True,
+    )
+    if title_text:
+        fig.update_layout(title=dict(text=title_text, x=0.5, xanchor="center"))
+    fig.update_yaxes(title_text="Fraction of Reads")
 
     # ---- Save ----
     output_dir.mkdir(parents=True, exist_ok=True)
     outpath = output_dir / file_name
-    fig.savefig(outpath)
-    plt.close(fig)
+    pio.write_html(
+        fig,
+        file=str(outpath),
+        include_plotlyjs=False,
+        full_html=False,
+        config={"responsive": True, "displaylogo": False},
+    )
 
     return outpath
 
@@ -250,75 +334,138 @@ def pareto_plot(
 
     if len(slice_data) == 0:
         logger.warning(f"No valid data for pareto plot: {file_name}")
-        # Create empty plot
-        fig, ax = plt.subplots(figsize=(20, 10))
-        ax.text(0.5, 0.5, 'No valid data', ha='center', va='center')
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No valid data",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+        )
+        fig.update_layout(
+            template="plotly_white",
+            height=420,
+            margin=dict(l=40, r=40, t=40, b=40),
+        )
         outpath = output_dir / file_name
-        fig.savefig(outpath)
-        plt.close(fig)
+        pio.write_html(
+            fig,
+            file=str(outpath),
+            include_plotlyjs=False,
+            full_html=False,
+            config={"responsive": True, "displaylogo": False},
+        )
         return outpath
 
-    fig, ax = plt.subplots(figsize=(20, 10))
+    x_vals = list(range(len(slice_data)))
 
-    ax.plot(
-        slice_data[y_col1],
-        marker="x",
-        linewidth=1,
-        label="Fraction Total"
-    )
-
-    # define second y-axis that shares x-axis with current plot
-    ax2 = ax.twinx()
-
-    # add second line to plot
-    ax2.plot(
-        slice_data[y_col2],
-        marker='.',
-        linewidth=1,
-        color='tab:orange',
-        label='Cumulative Fraction'
-    )
-
-    # add second y-axis label
     labels0 = list(slice_data.index)
-
-    chanLabels = list(
+    chan_labels = list(
         "_" + (slice_data[channel_label] + 1).astype(str).str.zfill(2)
     )
-    labels3 = [f"{lb}{cb}" for lb, cb in zip(labels0, chanLabels)]
+    labels3 = [f"{lb}{cb}" for lb, cb in zip(labels0, chan_labels)]
 
-    ax.set_xticks(range(len(labels0)))
+    s = slice_data[colorby].astype(bool)
+    marker_colors = np.where(s, "green", "#1f2937")
+    channel_raw = pd.to_numeric(slice_data[channel_label], errors="coerce")
+    channel_vals = channel_raw.map(
+        lambda v: str(int(v + 1)) if pd.notna(v) else "NA"
+    )
+    status_vals = np.where(s, "Expected", "Unexpected")
+    customdata = np.column_stack([labels0, channel_vals, status_vals])
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=slice_data[y_col1],
+            mode="lines+markers",
+            marker=dict(color=marker_colors, size=4),
+            line=dict(color="#4c78a8", width=1),
+            name="Fraction Total",
+            customdata=customdata,
+            hovertemplate=(
+                "Barcode: %{customdata[0]}<br>"
+                "Channel: %{customdata[1]}<br>"
+                "Status: %{customdata[2]}<br>"
+                "%{y:.2%}<extra></extra>"
+            ),
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=slice_data[y_col2],
+            mode="lines+markers",
+            marker=dict(color="gray", size=4),
+            line=dict(color="gray", width=1),
+            name="Cumulative Fraction",
+            customdata=customdata,
+            hovertemplate=(
+                "Barcode: %{customdata[0]}<br>"
+                "Channel: %{customdata[1]}<br>"
+                "Status: %{customdata[2]}<br>"
+                "%{y:.2%}<extra></extra>"
+            ),
+        ),
+        secondary_y=True,
+    )
+
     n_labels = len(labels3)
     if n_labels > 0:
         step = max(1, n_labels // 40)
-        shown = [lb if i % step == 0 else "" for i, lb in enumerate(labels3)]
-        ax.set_xticklabels(shown, rotation=90, fontsize=6)
+        tickvals = [i for i in range(n_labels) if i % step == 0]
+        ticktext = [labels3[i] for i in tickvals]
+        fig.update_xaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext)
 
-    s = slice_data[colorby]
-    makeGreen = np.where(s)[0].tolist()
-    for mg in makeGreen:
-        if mg < len(ax.get_xticklabels()):
-            ax.get_xticklabels()[mg].set_color("green")
+    if "L1" in wildcard_path.name:
+        title_text = "Barcode A 8mers by fraction of total"
+    elif "L2" in wildcard_path.name:
+        title_text = "Barcode B 8mers by fraction of total"
+    else:
+        title_text = f"plot: {wildcard_path}"
 
-    # Only add axhline if ax2 has valid data limits
-    try:
-        ax2.axhline(
-            y=.9,
-            color='tab:gray',
-            linestyle='--',
-            linewidth=0.5,
-            label='90 percent'
-        )
-    except np.linalg.LinAlgError:
-        # Skip if axis transform is singular (e.g., empty data)
-        pass
-
-    fig.legend(loc="upper right", bbox_to_anchor=(0.98, 0.85))
-    plt.title(f"plot: {wildcard_path}")
-    fig.subplots_adjust(bottom=0.2)
+    fig.update_layout(
+        title=dict(text=title_text, x=0.5, xanchor="center"),
+        template="plotly_white",
+        height=420,
+        margin=dict(l=40, r=40, t=40, b=80),
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.75,
+            xanchor="right",
+            x=0.9,
+            font=dict(size=12),
+        ),
+        autosize=True,
+    )
+    y1_max = float(slice_data[y_col1].max()) if len(slice_data) else 0.0
+    y1_max = y1_max * 1.1 if y1_max > 0 else 0.05
+    fig.update_yaxes(
+        title_text="Fraction Total",
+        secondary_y=False,
+        range=[0, y1_max],
+        tickformat=".2%",
+        showgrid=False
+    )
+    fig.update_yaxes(
+        title_text="Cumulative Fraction",
+        secondary_y=True,
+        range=[0, 1],
+        tickformat=".0%",
+        showgrid=False
+    )
 
     pareto_path = output_dir / file_name
-    fig.savefig(pareto_path)
-    plt.close(fig)
+    pio.write_html(
+        fig,
+        file=str(pareto_path),
+        include_plotlyjs=False,
+        full_html=False,
+        config={"responsive": True, "displaylogo": False},
+    )
 
     return pareto_path

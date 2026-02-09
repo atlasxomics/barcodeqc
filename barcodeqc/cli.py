@@ -132,11 +132,12 @@ def main(args: argparse.Namespace) -> int:
 
         figures_dir = sample_dir / "figures"
         tables_dir = sample_dir / "tables"
-        figures = (
-            list(figures_dir.glob("*.png"))
-            if figures_dir.exists()
-            else list(sample_dir.glob("*.png"))
-        )
+        if figures_dir.exists():
+            figures = list(figures_dir.glob("*.html"))
+            figures += list(figures_dir.glob("*.png"))
+        else:
+            figures = list(sample_dir.glob("*.html"))
+            figures += list(sample_dir.glob("*.png"))
         summary_path = tables_dir / "qc_table.csv"
         onoff_path = tables_dir / "onoff_tissue_table.csv"
         if not summary_path.exists():
@@ -148,6 +149,7 @@ def main(args: argparse.Namespace) -> int:
         onoff = pd.read_csv(onoff_path) if onoff_path.exists() else None
 
         linker_metrics = report.load_linker_metrics_from_dir(sample_dir)
+        input_params = report.load_input_params_from_dir(sample_dir)
 
         if summary is not None:
             from barcodeqc.report import print_summary_table
@@ -160,6 +162,7 @@ def main(args: argparse.Namespace) -> int:
             sample_name=args.sample_name,
             summary_table=summary,
             onoff_table=onoff,
+            input_params=input_params,
             linker_metrics=linker_metrics,
             file_tag="bcQC",
             table_dir=tables_dir if tables_dir.exists() else None,

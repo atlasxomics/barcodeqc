@@ -66,6 +66,14 @@ def qc(
         f"Using tissue_postions_file: {config.tissue_position_file}"
     )
 
+    raw_reads = None
+    try:
+        raw_reads = utils.count_fastq_reads(config.r2_path)
+    except Exception as exc:
+        logger.warning(
+            "Failed to count raw reads in %s: %s", config.r2_path, exc
+        )
+
     bca_file = paths.BARCODE_PATHS[barcode_set]["bca"]
     bca_positions = files.open_barcode_file(bca_file)
 
@@ -143,6 +151,11 @@ def qc(
         linker_metrics[eL] = {
             "Total Reads": total_reads,
             "Total with Linker": adapter_reads,
+            "Percent Pass Filtering": (
+                f"{(adapter_reads / total_reads):.1%}"
+                if total_reads > 0
+                else "NA"
+            ),
             "Number of Unique Barcodes": len(unique_counts),
             "Number Barcodes with 90% of reads": numToNinety,
             "Percent reads in expected barcodes": f"{total_read_from_expected:.1%}",
@@ -165,7 +178,9 @@ def qc(
             format_hilo_metrics(eL, totalHiWarn, totalLoWarn, totalMers)
         )
         hi_lane_statuses.append(lane_status(bc_table, "hiWarn"))
-        lo_lane_statuses.append(lane_status(bc_table, "loWarn"))
+        lo_lane_statuses.append(
+            lane_status(bc_table, "loWarn", edge_adjacent_ok=True)
+        )
 
         # Only export if there are hi/lows
         if (totalHiWarn + totalLoWarn) > 0:
@@ -184,7 +199,7 @@ def qc(
             "frac_count",
             "sequence",
             figures_dir,
-            f"{eL}_barplot.png",
+            f"{eL}_barplot.html",
         )
         pic_paths.append(barplot_path)
         logger.info("Barplot saved.")
@@ -200,7 +215,7 @@ def qc(
             wc,
             maxToNinety,
             figures_dir,
-            f"{eL}_pareto.png",
+            f"{eL}_pareto.html",
         )
         pic_paths.append(pareto_path)
         logger.info("Pareto plot saved.")
@@ -211,7 +226,7 @@ def qc(
     _ = write_onoff_table(onoff_df, tables_dir)
 
     # generate density plot for on/off tissue pixels
-    density_path = figures_dir / "dense_on_off.png"
+    density_path = figures_dir / "dense_on_off.html"
     plots.create_density_plot(
         spatial_table,
         density_path,
@@ -266,17 +281,26 @@ def qc(
                 off_tissue_ratio,
             ],
             "description": [
-                "Reads are filtered on the sequence identity of the first ligation linker (L1); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate low quality sequencing.",
-                "Reads are filtered on the sequence identity of the second ligation linker (L2); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate low quality sequencing.",
+                "Reads are filtered on the sequence identity of the first ligation linker (L1); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
+                "Reads are filtered on the sequence identity of the second ligation linker (L2); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
                 "Barcode A sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences(sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
                 "Barcode B sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences (sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
                 "Reads with >2x the mean read count per row/col are flagged: PASS: no high lanes; ACTION REQUIRED: one or more non-adjacent high lane(s); CONTACT SUPPORT: adjacent high lanes. High lanes can be remediated with computational smoothing.",
-                "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes detected; ACTION REQUIRED: one or more non-adjacent low lane(s); CONTACT SUPPORT: adjacent low lanes. Low lanes can be remediated with computational filling.",
+                "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes; ACTION REQUIRED: one or more non-adjacent low lane(s) OR adjacent low lanes on edge of assay area (please check for off-tissue); CONTACT SUPPORT: adjacent low lanes internal to assay area (not on edge). Non-adjacent low lanes can be remediated with computational filling.",
                 "Ratio of reads from off-tissue pixels to on-tissue pixels. On/off pixels are defined by the user-supplied tissue_positions_file; if no file was supplied, all pixels are considered 'on-tissue' and the ratio is 0.  A high ratio can indicate incorrect on/off tissue assignment in AtlasXBrowser or procedural artifacts."
             ]
         }
     )
     report.print_summary_table(summary_table)
+    input_params = [
+        {"label": "Sample Name", "value": sample_name},
+        {"label": "Barcode File", "value": barcode_set},
+        {
+            "label": "Raw Reads",
+            "value": f"{raw_reads:,}" if raw_reads is not None else "NA",
+        },
+    ]
+    report.write_input_params(input_params, tables_dir)
     report.generate_report(
         figure_paths=pic_paths,
         output_dir=output_dir,
@@ -284,6 +308,7 @@ def qc(
         summary_table=summary_table,
         linker_metrics=linker_metrics,
         onoff_table=onoff_df,
+        input_params=input_params,
         file_tag="bcQC",
         table_dir=tables_dir,
     )
