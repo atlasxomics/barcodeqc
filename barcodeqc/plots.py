@@ -229,11 +229,18 @@ def hilo_plot(
     )
     customdata = np.column_stack([labels, channel_vals])
 
+    flagged = pd.Series(False, index=df.index)
+    if "hiWarn" in df.columns:
+        flagged |= df["hiWarn"].fillna(False)
+    if "loWarn" in df.columns:
+        flagged |= df["loWarn"].fillna(False)
+    bar_colors = np.where(flagged, "#dc2626", "#225789")
+
     fig = go.Figure(
         data=go.Bar(
             x=x_vals,
             y=y,
-            marker_color="#225789",
+            marker_color=bar_colors,
             customdata=customdata,
             hovertemplate=(
                 "Barcode: %{customdata[0]}<br>"

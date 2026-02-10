@@ -178,9 +178,7 @@ def qc(
             format_hilo_metrics(eL, totalHiWarn, totalLoWarn, totalMers)
         )
         hi_lane_statuses.append(lane_status(bc_table, "hiWarn"))
-        lo_lane_statuses.append(
-            lane_status(bc_table, "loWarn", edge_adjacent_ok=True)
-        )
+        lo_lane_statuses.append(lane_status(bc_table, "loWarn"))
 
         # Only export if there are hi/lows
         if (totalHiWarn + totalLoWarn) > 0:
@@ -248,19 +246,8 @@ def qc(
         )
 
     logger.info("Generating html report...")
-    if "CONTACT SUPPORT" in hi_lane_statuses:
-        hi_lane_summary = "CONTACT SUPPORT"
-    elif "ACTION REQUIRED" in hi_lane_statuses:
-        hi_lane_summary = "ACTION REQUIRED"
-    else:
-        hi_lane_summary = "PASS"
-
-    if "CONTACT SUPPORT" in lo_lane_statuses:
-        lo_lane_summary = "CONTACT SUPPORT"
-    elif "ACTION REQUIRED" in lo_lane_statuses:
-        lo_lane_summary = "ACTION REQUIRED"
-    else:
-        lo_lane_summary = "PASS"
+    hi_lane_summary = "CAUTION" if "CAUTION" in hi_lane_statuses else "PASS"
+    lo_lane_summary = "CAUTION" if "CAUTION" in lo_lane_statuses else "PASS"
 
     off_tissue_ratio = "NA"
     if onoff_df is not None:
@@ -290,10 +277,10 @@ def qc(
     descriptions = [
         "Reads are filtered on the sequence identity of the first ligation linker (L1); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
         "Reads are filtered on the sequence identity of the second ligation linker (L2); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
-        "Barcode A sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences(sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
-        "Barcode B sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences (sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
-        "Reads with >2x the mean read count per row/col are flagged: PASS: no high lanes; ACTION REQUIRED: one or more non-adjacent high lane(s); CONTACT SUPPORT: adjacent high lanes. High lanes can be remediated with computational smoothing.",
-        "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes; ACTION REQUIRED: one or more non-adjacent low lane(s) OR adjacent low lanes on edge of assay area (please check for off-tissue); CONTACT SUPPORT: adjacent low lanes internal to assay area (not on edge). Non-adjacent low lanes can be remediated with computational filling.",
+        "Detected Barcode A 8mers are compared against a user-defined whitelist. PASS: No unexpected 8mers in the top 100 sequences (sorted by read count); CAUTION: >=1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
+        "Detected Barcode B 8mers are compared against a user-defined whitelist. PASS: No unexpected 8mers in the top 100 sequences (sorted by read count); CAUTION: >=1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
+        "Reads with >2x the mean read count per row/col are flagged: PASS: no high lanes; CAUTION: one or more high lanes detected. Please navigate to the Lane QC section for more details.",
+        "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes; CAUTION: one or more low lanes detected. Please navigate to the Lane QC section for more details.",
     ]
     if tissue_provided:
         metrics.append("Off-tissue Ratio")
