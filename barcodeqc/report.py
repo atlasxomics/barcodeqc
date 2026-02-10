@@ -70,8 +70,26 @@ def _barcode_set_from_params(
     if not input_params:
         return None
     for item in input_params:
-        if item.get("label") == "Barcode File":
+        label = item.get("label")
+        if label and label.startswith("_"):
+            continue
+        if label == "Barcode File":
             return item.get("value")
+    return None
+
+
+def _tissue_positions_provided(
+    input_params: Optional[list[dict[str, str]]],
+) -> Optional[bool]:
+    if not input_params:
+        return None
+    for item in input_params:
+        if item.get("label") == "_tissue_positions_provided":
+            val = str(item.get("value", "")).strip().lower()
+            if val in {"true", "1", "yes"}:
+                return True
+            if val in {"false", "0", "no"}:
+                return False
     return None
 
 
@@ -187,6 +205,15 @@ def generate_report(
         "lane_qc_l2", []
     )
 
+    display_params = None
+    if input_params:
+        display_params = [
+            item for item in input_params
+            if not str(item.get("label", "")).startswith("_")
+        ]
+    show_onoff_flag = _tissue_positions_provided(input_params)
+    show_onoff = bool(onoff_table) if show_onoff_flag is None else show_onoff_flag
+
     bc_contam_labels: list[str] = []
     if figures["bc_contam_l1"]:
         bc_contam_labels.append("L1")
@@ -249,7 +276,9 @@ def generate_report(
             <li><a href="#linker-filtering">Linker Filtering</a></li>
             <li><a href="#barcode-check">Barcode Check</a></li>
             <li><a href="#lane-qc">Lane QC</a></li>
+            {% if show_onoff %}
             <li><a href="#onoff">On/Off Tissue</a></li>
+            {% endif %}
           </ul>
         </nav>
       </aside>
@@ -406,6 +435,7 @@ def generate_report(
           {% endif %}
         </div>
 
+        {% if show_onoff %}
         <div id="onoff" class="row">
           <h2>On/Off Tissue Distribution</h2>
 
@@ -435,6 +465,7 @@ def generate_report(
 
           </div>
         </div>
+        {% endif %}
 
         {% if note_html %}
         <div class="note">{{ note_html | safe }}</div>
@@ -501,7 +532,7 @@ def generate_report(
             onoff_table.to_dict(orient="records")
             if onoff_table is not None else None
         ),
-        input_params=input_params,
+        input_params=display_params,
         linker_metrics=linker_metrics,
         logo_uri=logo_uri,
         unexpected_barcodes=unexpected_barcodes,
@@ -510,6 +541,7 @@ def generate_report(
         bc_contam_figures=bc_contam_figures,
         lane_qc_figures=lane_qc_figures,
         unexpected_top_n=unexpected_top_n,
+        show_onoff=show_onoff,
     )
 
     html_path = output_dir / f"{sample_name}_{file_tag}_report.html"

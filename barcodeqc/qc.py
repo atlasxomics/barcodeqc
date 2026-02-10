@@ -220,25 +220,32 @@ def qc(
         pic_paths.append(pareto_path)
         logger.info("Pareto plot saved.")
 
-    # Do some on/off tissue calcs
-    logger.info("Calculating on/off tissue stats...")
-    onoff_df = compute_onoff_metrics(spatial_table)
-    _ = write_onoff_table(onoff_df, tables_dir)
+    tissue_provided = tissue_position_file is not None
+    onoff_df = None
+    if tissue_provided:
+        # Do some on/off tissue calcs
+        logger.info("Calculating on/off tissue stats...")
+        onoff_df = compute_onoff_metrics(spatial_table)
+        _ = write_onoff_table(onoff_df, tables_dir)
 
-    # generate density plot for on/off tissue pixels
-    density_path = figures_dir / "dense_on_off.html"
-    plots.create_density_plot(
-        spatial_table,
-        density_path,
-        "count",
-        "on_off",
-        log10=True,
-        x_label="total counts",
-        y_label="density"
-    )
-    pic_paths.append(density_path)
+        # generate density plot for on/off tissue pixels
+        density_path = figures_dir / "dense_on_off.html"
+        plots.create_density_plot(
+            spatial_table,
+            density_path,
+            "count",
+            "on_off",
+            log10=False,
+            x_label="total counts",
+            y_label="density"
+        )
+        pic_paths.append(density_path)
 
-    logger.info("on/off tissue stats finished.")
+        logger.info("on/off tissue stats finished.")
+    else:
+        logger.info(
+            "No tissue_position_file provided, skipping on/off metrics."
+        )
 
     logger.info("Generating html report...")
     if "CONTACT SUPPORT" in hi_lane_statuses:
@@ -255,44 +262,55 @@ def qc(
     else:
         lo_lane_summary = "PASS"
 
-    ratio_row = onoff_df.loc[onoff_df["metric"] == "ratio_off_on", "value"]
-    off_tissue_ratio = (
-        f"{ratio_row.iloc[0]:.3f}" if not ratio_row.empty else "NA"
-    )
+    off_tissue_ratio = "NA"
+    if onoff_df is not None:
+        ratio_row = onoff_df.loc[
+            onoff_df["metric"] == "ratio_off_on", "value"
+        ]
+        off_tissue_ratio = (
+            f"{ratio_row.iloc[0]:.3f}" if not ratio_row.empty else "NA"
+        )
+
+    metrics = [
+        "Linker 1 Filter",
+        "Linker 2 Filter",
+        "Barcode A Check",
+        "Barcode B Check",
+        "HIGH Lanes",
+        "LOW Lanes",
+    ]
+    statuses = [
+        linker_status.get("L1", ("NA", 0.0))[0],
+        linker_status.get("L2", ("NA", 0.0))[0],
+        barcode_status.get("L1", ("NA", 0))[0],
+        barcode_status.get("L2", ("NA", 0))[0],
+        hi_lane_summary,
+        lo_lane_summary,
+    ]
+    descriptions = [
+        "Reads are filtered on the sequence identity of the first ligation linker (L1); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
+        "Reads are filtered on the sequence identity of the second ligation linker (L2); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
+        "Barcode A sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences(sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
+        "Barcode B sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences (sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
+        "Reads with >2x the mean read count per row/col are flagged: PASS: no high lanes; ACTION REQUIRED: one or more non-adjacent high lane(s); CONTACT SUPPORT: adjacent high lanes. High lanes can be remediated with computational smoothing.",
+        "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes; ACTION REQUIRED: one or more non-adjacent low lane(s) OR adjacent low lanes on edge of assay area (please check for off-tissue); CONTACT SUPPORT: adjacent low lanes internal to assay area (not on edge). Non-adjacent low lanes can be remediated with computational filling.",
+    ]
+    if tissue_provided:
+        metrics.append("Off-tissue Ratio")
+        statuses.append(off_tissue_ratio)
+        descriptions.append(
+            "Ratio of reads from off-tissue pixels to on-tissue pixels. On/off pixels are defined by the user-supplied tissue_positions_file; if no file was supplied, all pixels are considered 'on-tissue' and the ratio is 0.  A high ratio can indicate incorrect on/off tissue assignment in AtlasXBrowser or procedural artifacts."
+        )
 
     summary_table = pd.DataFrame(
-        {
-            "metric": [
-                "Linker 1 Filter",
-                "Linker 2 Filter",
-                "Barcode A Check",
-                "Barcode B Check",
-                "HIGH Lanes",
-                "LOW Lanes",
-                "Off-tissue Ratio",
-            ],
-            "status": [
-                linker_status.get("L1", ("NA", 0.0))[0],
-                linker_status.get("L2", ("NA", 0.0))[0],
-                barcode_status.get("L1", ("NA", 0))[0],
-                barcode_status.get("L2", ("NA", 0))[0],
-                hi_lane_summary,
-                lo_lane_summary,
-                off_tissue_ratio,
-            ],
-            "description": [
-                "Reads are filtered on the sequence identity of the first ligation linker (L1); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
-                "Reads are filtered on the sequence identity of the second ligation linker (L2); reads with more than 3 mismatches are removed from processing. PASS: >70% of reads kept. A low passing rate can indicate poor quality sequencing.",
-                "Barcode A sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences(sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
-                "Barcode B sequences are extracted and compared against the user-defined whitelist. PASS: No unexpected sequences in the top 100 sequences (sorted by read count); CAUTION: >1 unexpected sequences.  Unexpected sequences can indicate a mismatch between the barcodes used and the whitelist selected for processing.",
-                "Reads with >2x the mean read count per row/col are flagged: PASS: no high lanes; ACTION REQUIRED: one or more non-adjacent high lane(s); CONTACT SUPPORT: adjacent high lanes. High lanes can be remediated with computational smoothing.",
-                "Reads with <0.5x the mean read count per row/col are flagged: PASS: no low lanes; ACTION REQUIRED: one or more non-adjacent low lane(s) OR adjacent low lanes on edge of assay area (please check for off-tissue); CONTACT SUPPORT: adjacent low lanes internal to assay area (not on edge). Non-adjacent low lanes can be remediated with computational filling.",
-                "Ratio of reads from off-tissue pixels to on-tissue pixels. On/off pixels are defined by the user-supplied tissue_positions_file; if no file was supplied, all pixels are considered 'on-tissue' and the ratio is 0.  A high ratio can indicate incorrect on/off tissue assignment in AtlasXBrowser or procedural artifacts."
-            ]
-        }
+        {"metric": metrics, "status": statuses, "description": descriptions}
     )
     report.print_summary_table(summary_table)
     input_params = [
+        {
+            "label": "_tissue_positions_provided",
+            "value": "true" if tissue_provided else "false",
+        },
         {"label": "Sample Name", "value": sample_name},
         {"label": "Barcode File", "value": barcode_set},
         {
@@ -307,7 +325,7 @@ def qc(
         sample_name=sample_name,
         summary_table=summary_table,
         linker_metrics=linker_metrics,
-        onoff_table=onoff_df,
+        onoff_table=onoff_df if tissue_provided else None,
         input_params=input_params,
         file_tag="bcQC",
         table_dir=tables_dir,
