@@ -15,11 +15,11 @@ import barcodeqc.paths as bq_paths
 import barcodeqc.files as bq_files
 
 
-def _load_static_logo() -> str | None:
-    logo_path = files("barcodeqc") / "data" / "static" / "logo.png"
-    if not logo_path.is_file():
+def _load_static_image(filename: str) -> str | None:
+    image_path = files("barcodeqc") / "data" / "static" / filename
+    if not image_path.is_file():
         return None
-    return _image_data_uri(logo_path)
+    return _image_data_uri(image_path)
 
 
 def write_summary_table(
@@ -173,7 +173,16 @@ def generate_report(
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logo_uri = _load_static_logo()
+    logo_uri = _load_static_image("logo.png")
+    linker_filtering = _load_static_image("linker_filtering.png")
+    pareto_good = _load_static_image("pareto_good.png")
+    pareto_one = _load_static_image("pareto_bad_one.png")
+    pareto_many = _load_static_image("pareto_bad_many.png")
+    barcode_qc_uri = _load_static_image("barcode_qc.png")
+    low_lanes_correctable = _load_static_image("low_lanes_correctable.png")
+    low_lanes_biological = _load_static_image("low_lanes_biological.png")
+    high_lanes_correctable = _load_static_image("high_lanes_correctable.png")
+    lane_failure = _load_static_image("lane_failure.png")
 
     outputs: dict[str, Path] = {}
     if summary_table is not None:
@@ -335,6 +344,57 @@ def generate_report(
 
         <div id="linker-filtering" class="row">
           <h2>Linker Filtering</h2>
+
+          <details class="spoiler">
+            <summary>Explain Linker Filtering</summary>
+            <div class="spoiler-body">
+              <p>
+                Processing FASTQ files generated from a DBiT-seq experiment begins with two rounds of read-level filtering designed to remove sequences with low base quality or incorrect molecular structure.
+                <br><br>
+                This filtering step leverages the sequence identity of Ligation Linker 1 (L1) and Ligation Linker 2 (L2) (see figure below). These linker sequences are conserved regions that should be identical across all properly constructed molecules.
+                <br><br>
+                {% if linker_filtering %}
+                  <div class="linker-example">
+                    <img src="{{ linker_filtering }}" alt="linker_filtering" />
+                  </div>
+                {% endif %}
+                <br>
+                Because L1 and L2 are invariant and located at defined positions within each read, their sequence fidelity serves as an internal structural checkpoint. Reads with mismatches, indels, or truncated linker sequences are likely the result of sequencing errors, incomplete ligation, or improper library construction and are therefore removed.
+                <br><br>
+                Reads with 3 mismatches or more in either ligation linker sequence are removed from processing. Either filtering step removing >30% of the reads results in a CAUTION status. We recommend that the experiment proceed through processing--but it may be a canidate for re-sequencing if the downstream metrics do not meet desired criteria.
+                </p>
+                <br><br
+                <p>From this filtering step, we compute the following metrics:</p>
+                <ul>
+                  <li>
+                    <strong>Total Reads:</strong> The total number of input reads after subsampling and prior to filtering. This value should match the subsampling target unless the number of available raw reads was lower than the target.
+                  </li>
+                  <br>
+                  <li>
+                    <strong>Total with Linker:</strong> The number of reads containing the ligation linker sequence with fewer than three mismatches.
+                  </li>
+                  <br>
+                  <li>
+                    <strong>Percent Pass Filter:</strong> The percentage of input reads retained after filtering (Total with Linker ÷ Total Reads).
+                  </li>
+                  </li>
+                  <br>
+                  <li>
+                    <strong>Number of Unique Barcodes:</strong>The number of distinct 8-mer sequences detected downstream of the linker. Because random sequencing errors introduce spurious variants, this value is typically higher than the expected number of barcodes. In well-performing experiments, however, unexpected 8-mers account for only a small fraction of reads and can generally be ignored (see Barcode Check section). discussion).
+                  </li>
+                  <br>
+                  <li>
+                    <strong>Number Barcodes with 90% of reads:</strong> Reads are grouped by barcode, and this metric reports how many barcodes collectively account for 90% of total reads. This value determines how many 8-mers are displayed in the Pareto plot (see Barcode Check below) and should typically be close to the expected number of barcodes.
+                  </li>
+                  <br>
+                  <li>
+                    <strong>Percent of Reads in Expected Barcodes:</strong> The percentage of total reads assigned to the barcode whitelist specified by the <code>barcode_set</code> parameter. This value is typically greater than 80%. See the Barcode Check section for additional details.
+                  </li>
+                </ul>
+            </div>
+          </details>
+          <br>
+
           {% if linker_metrics %}
           <div class="grid-2">
             {% for label, metrics in linker_metrics.items() %}
@@ -352,6 +412,69 @@ def generate_report(
 
         <div id="barcode-check" class="row">
           <h2>Barcode Check</h2>
+          <details class="spoiler">
+            <summary>Explain Barcode Check</summary>
+              <div class="spoiler-body">
+                <p>
+                  This section screens for failure modes resulting from a mismatch between the molecular barcodes used in the DBiT-seq experiment and the barcodes selected for computational processing. It also checks for the presence of contaminating 8-mer sequences at the barcode location that may result from poor sequencing quality.
+                </p>
+                <br>
+                <p>
+                  We define the Barcode A and Barcode B 8-mer sequences as the 8 base pairs upstream of Ligation Linker 1 and Ligation Linker 2, respectively (only sequences with fewer than 3 mismatches are considered; see Filtering above). For each barcode (A and B), we create a table of read counts for each 8-mer sequence. We calculate the relative frequency of each barcode, sort by frequency, and generate the Pareto plot below showing the sequences that account for 90% of all reads.
+                </p>
+                <br>
+                <p>
+                  In the figure below, the left y-axis displays the frequency of each barcode, and the right y-axis shows the cumulative sum. Each point on the graph represents a detected 8-mer sequence. Expected 8-mers are colored green; the x-axis label for each point is comprised of the 8-mer sequence proceeded by either the channel for expected barcodes or 'nan' for unexpected.
+                </p>
+              <br>
+              <p>
+                Below, we present examples of common scenarios to aid interpretation.
+              </p>
+              <br>
+
+              <h4>Success</h4>
+                <br>
+                <p>
+                  This figure illustrates a successful experiment. The frequency plot (left axis) shows a smooth, steadily decreasing trend. The top-ranked 220 8-mers are all expected sequences (shown in green). Beyond these dominant barcodes, the frequency drops sharply, and the remaining 8-mers are unexpected (shown in black) and represent only a small fraction of total reads. The plot includes 8-mers cumulatively until 90% of input reads are accounted for.
+                </p>
+                <br>
+                {% if pareto_good %}
+                  <div class="lane-qc-example">
+                    <img src="{{ pareto_good }}" alt="pareto_good" />
+                  </div>
+                {% endif %}
+
+              <br><br>
+              <h4>Wrong barcode_set (multiple barcodes)</h4>
+                <br>
+                <p>
+                  The example below shows a run processed with an incorrect barcode set. Note the interspersed green and black points in the frequency plot, indicating a mixture of expected and unexpected barcode sequences. This can occur if, for example, the experiment used the bc220 barcode set but bc96 was selected during processing. If you observe this pattern in your run, verify that the correct barcode files were used.
+                </p>
+                <br>
+                {% if pareto_many %}
+                  <div class="lane-qc-example">
+                    <img src="{{ pareto_many }}" alt="pareto_many" />
+                  </div>
+                {% endif %}
+              <br><br>
+
+              <h4>Wrong barcode_set (single barcode)</h4>
+                <br>
+                <p>
+                  The example below shows a run with a single barcode mismatch. This typically occurs when the selected barcode set differs from the correct set by only one barcode—for example, using bc220 instead of bc220_05-OCT. If you observe this pattern in your run, verify that the correct barcode files were used.
+                </p>
+                <br>
+                {% if pareto_one %}
+                  <div class="lane-qc-example">
+                    <img src="{{ pareto_one }}" alt="pareto_one" />
+                  </div>
+                {% endif %}
+              <br>
+
+            </div>
+          </details>
+          <br>
+
           {% if unexpected_available %}
           {% if bc_contam_labels %}
           <div class="barcode-table-carousel">
@@ -417,7 +540,127 @@ def generate_report(
         </div>
 
         <div id="lane-qc" class="row">
-          <h2>Barcode Lane QC</h2>
+          <h2>Lane QC</h2>
+          <details class="spoiler">
+            <summary>Explain Lane QC</summary>
+            <div class="spoiler-body">
+              <p>
+                In this section, we display the relative read counts for each
+                barcode as a bar plot, organized by row and column. Expected
+                barcodes—specified by the barcode_set parameter—are arranged
+                left to right along the x-axis and separated into two groups:
+                rows and columns (typically Barcode A and Barcode B,
+                respectively). Column (X-coordinate) barcodes are ordered left
+                to right, while row (Y-coordinate) barcodes are ordered top to
+                bottom. Data for this figure can be found in the 'tables'
+                directory of the outputs folder.  L1_counts.csv contains data
+                for Barcode A, L2_counts.csv for Barcode B.
+              </p>
+              <p>
+                The y-axis represents the fraction of total reads. For each
+                lane, read counts across all pixels are summed and divided by
+                the total read count, yielding the Fraction of Reads
+                (see figure below).
+              </p>
+              {% if barcode_qc_uri %}
+                <div class="lane-qc-figure">
+                  <img src="{{ barcode_qc_uri }}" alt="barcode_qc" />
+                </div>
+              {% endif %}
+              <br>
+              <p>
+                This QC plot serves as a quick diagnostic for identifying
+                anomalous lanes. Barcodes with a read fraction greater than 2×
+                the mean are flagged as potential high artifacts, while those
+                with a fraction less than 0.5× the mean are flagged as
+                potential low artifacts. In the bar plot, these potential
+                artifacts are highlighted in red.
+              </p>
+              <p>
+                Barcodes with unusually high or low read fractions may result
+                from microfluidic artifacts. In many cases, these can be
+                mitigated through computational smoothing (see documentations
+                for 'barcodeqc preview' and 'barcodeqc smooth'). However, such
+                patterns may also reflect genuine biological or tissue
+                features, such as missing tissue or tissue boundaries.
+              </p>
+              <p>
+                Below, we present examples of common scenarios to aid
+                interpretation.
+              </p>
+              <br>
+              <h4>Low Lanes</h4>
+              <br>
+
+                <p>Example 1</p>
+                <p>
+                  In the figure below, we present a barcode QC plot containing multiple correctable low lanes. This run would trigger a CAUTION status in the summary table at the top of the page.
+                  <br><br>
+                  The row count bar plot (bottom) contains two lanes with fractions less than half of the row mean and substantially lower than their neighboring lanes (red arrows). These anomalous lanes likely represent chip defects resulting from microfluidic flow irregularities. Both can be corrected using computational smoothing.
+                  <br><br>
+                  The top panel (columns) shows low lanes at the left and right edges of the assayed area. These “edge effects” are common artifacts and can also be corrected with smoothing.
+                </p>
+
+                {% if low_lanes_correctable %}
+                  <div class="lane-qc-example">
+                    <img src="{{ low_lanes_correctable }}" alt="low_lanes_correctable" />
+                  </div>
+                {% endif %}
+
+                <br>
+
+                <p>Example 2</p>
+                <p>
+                  In this example, the run contains “low lanes” that reflect genuine tissue features. These lanes would trigger a CAUTION status in the summary table at the top of the page, but they do not require corrective action.
+                  <br><br>
+                  The lanes in question are circled in green in the bottom bar plot and are nearly all below the 0.5× mean threshold. The right panel shows a spatial heatmap of the assay region colored by the log of read counts per pixel. The region corresponding to the low lanes is highlighted in green and contains either no tissue (left-most) or minimal tissue at the boundary.
+                  <br><br>
+                  Because low read counts are expected in these regions, the CAUTION status can be safely ignored.
+                </p>
+
+                {% if low_lanes_biological %}
+                  <div class="lane-qc-example">
+                    <img src="{{ low_lanes_biological }}" alt="low_lanes_biological" />
+                  </div>
+                {% endif %}
+
+                <br>
+
+              <h4>High Lanes</h4>
+              <br>
+
+                <p>Example 1</p>
+                <p>
+                  Here we show a run with four high lanes that can be corrected using computational smoothing. In the barcode plot, these lanes have a higher fraction of reads compared to their neighbors. This pattern likely represents a spatial artifact that can be resolved through smoothing and is expected to have minimal impact on downstream analysis.
+                </p>
+                <br>
+                {% if high_lanes_correctable %}
+                  <div class="lane-qc-example">
+                    <img src="{{ high_lanes_correctable }}" alt="high_lanes_correctable" />
+                  </div>
+                {% endif %}
+
+                <br>
+
+                <h4>Contact Support</h4>
+                <br>
+
+                <p>Example 1</p>
+                <p>
+                  Below is the lane QC bar plot for a run with severe high and low artifacts. These artifacts display an alternating high/low pattern that makes computational smoothing unreliable. It is unlikely that this run can be adequately corrected.
+                  <br><br>
+                  If your run resembles this example, please contact your AtlasXomics support scientist for assistance.
+                </p>
+                <br>
+                {% if lane_failure %}
+                  <div class="lane-qc-example">
+                    <img src="{{ lane_failure }}" alt="lane_failure" />
+                  </div>
+                {% endif %}
+                <br>
+
+            </div>
+          </details>
           {% if lane_qc_figures %}
           <div class="plot-row">
             <div class="carousel-stage">
@@ -535,6 +778,15 @@ def generate_report(
         input_params=display_params,
         linker_metrics=linker_metrics,
         logo_uri=logo_uri,
+        linker_filtering=linker_filtering,
+        pareto_good=pareto_good,
+        pareto_many=pareto_many,
+        pareto_one=pareto_one,
+        barcode_qc_uri=barcode_qc_uri,
+        low_lanes_correctable=low_lanes_correctable,
+        low_lanes_biological=low_lanes_biological,
+        high_lanes_correctable=high_lanes_correctable,
+        lane_failure=lane_failure,
         unexpected_barcodes=unexpected_barcodes,
         unexpected_available=unexpected_available,
         bc_contam_labels=bc_contam_labels,
