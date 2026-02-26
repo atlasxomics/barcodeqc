@@ -20,14 +20,12 @@ The tool expects Illumina short-read data using the barcoding schema described i
 ## Steps
 Pipeline stages executed by `barcodeqc qc`:
 
-1. Parse and validate CLI inputs (`sample_name`, `r2_path`, `barcode_set`, optional tissue positions).
-2. Create the run output structure (`figures/`, `tables/`, `logs/`) under `SAMPLE_NAME/`.
-3. Subsample Read 2 with `seqtk sample` and write `ds_<sample_reads>.fastq.gz`.
-4. Run `cutadapt` for linker 1 and linker 2 independently, writing wildcard barcode files and logs.
-5. Build `spatialTable.csv` by merging linker barcode calls and joining to tissue positions.
-6. For each linker, compute barcode count metrics, whitelist checks, and lane QC flags; write count tables and QC plots.
-7. If tissue positions are available, compute on/off tissue metrics and generate the on/off density plot.
-8. Build the summary QC table, print a terminal status table, and render the final HTML report.
+1. Subsample Read 2 with `seqtk sample` and write `ds_<sample_reads>.fastq.gz`.
+2. Run `cutadapt` for linker 1 and linker 2 independently, writing wildcard barcode files and logs.
+3. Build `spatialTable.csv` by merging linker barcode calls and joining to tissue positions.
+4. For each linker, compute barcode count metrics, whitelist checks, and lane QC flags; write count tables and QC plots.
+5. If tissue positions are available, compute on/off tissue metrics and generate the on/off density plot.
+6. Build the summary QC table, print a terminal status table, and render the final HTML report.
 
 ## Requirements
 - macOS or Linux
