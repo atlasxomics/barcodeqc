@@ -107,6 +107,7 @@ barcodeqc report -n SAMPLE_NAME -d /path/to/SAMPLE_NAME
 - `--sample_reads`: number of reads to subsample (default `10000000`)
 - `--random_seed`: seed for subsampling (default `42`)
 - `--tissue_position_file`: optional tissue_positions_list.csv from AtlasXBrowser
+- `--count_raw_reads`: optional full-file read counting for report metadata (off by default; can be slow on large files)
 - `--dry_run`: create the output directory but skip running the pipeline
 
 ## Outputs
@@ -150,5 +151,6 @@ Notes on optional outputs:
 - `seqtk` not found: install `seqtk` and ensure it is on PATH.
 - `cutadapt` not found: ensure the active environment includes `cutadapt` and the `cutadapt` CLI is available.
 - Missing or incorrect tissue positions: provide a valid `tissue_positions_list.csv` or rely on the default barcode-set positions file.
+- Large input appears stuck right after `CLI started`: by default this version skips full raw-read counting to avoid startup delays on very large FASTQs. If you enable `--count_raw_reads`, expect startup to include a full scan of the input file.
 - Logs are written to `barcodeqc.log` and `SAMPLE_NAME/logs/`.
 - Contact your AtlasXomics Support Scientist if you encounter persistent issues.

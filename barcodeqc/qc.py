@@ -39,7 +39,8 @@ def qc(
     ],
     sample_reads: int,
     random_seed: int,
-    tissue_position_file: Optional[Path]
+    tissue_position_file: Optional[Path],
+    count_raw_reads: bool = False,
 ) -> Path:
 
     # Setup
@@ -67,11 +68,22 @@ def qc(
     )
 
     raw_reads = None
-    try:
-        raw_reads = utils.count_fastq_reads(config.r2_path)
-    except Exception as exc:
-        logger.warning(
-            "Failed to count raw reads in %s: %s", config.r2_path, exc
+    if count_raw_reads:
+        logger.info(
+            "Counting total reads in %s (full-file scan; may be slow)...",
+            config.r2_path,
+        )
+        try:
+            raw_reads = utils.count_fastq_reads(config.r2_path)
+            logger.info("Raw read count complete: %s", f"{raw_reads:,}")
+        except Exception as exc:
+            logger.warning(
+                "Failed to count raw reads in %s: %s", config.r2_path, exc
+            )
+    else:
+        logger.info(
+            "Skipping raw read counting for faster startup. "
+            "Use --count_raw_reads to enable."
         )
 
     bca_file = paths.BARCODE_PATHS[barcode_set]["bca"]
@@ -302,7 +314,11 @@ def qc(
         {"label": "Barcode File", "value": barcode_set},
         {
             "label": "Raw Reads",
-            "value": f"{raw_reads:,}" if raw_reads is not None else "NA",
+            "value": (
+                f"{raw_reads:,}"
+                if raw_reads is not None
+                else "NA (skipped; use --count_raw_reads)"
+            ),
         },
     ]
     report.write_input_params(input_params, tables_dir)

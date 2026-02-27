@@ -87,6 +87,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print commands instead of executing them"
     )
+    qc_parser.add_argument(
+        "--count_raw_reads",
+        required=False,
+        action="store_true",
+        help=(
+            "Count total reads in input FASTQ for report metadata. "
+            "Disabled by default because it scans the full file and can be "
+            "slow on large datasets."
+        ),
+    )
 
     report_parser = subparsers.add_parser(
         "report",
@@ -189,7 +199,8 @@ def main(args: argparse.Namespace) -> int:
             barcode_set=args.barcode_set,
             sample_reads=args.sample_reads,
             random_seed=args.random_seed,
-            tissue_position_file=args.tissue_position_file
+            tissue_position_file=args.tissue_position_file,
+            count_raw_reads=args.count_raw_reads,
         )
         if not spatial_table.exists():
             logging.error(
