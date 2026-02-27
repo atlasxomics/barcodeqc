@@ -32,6 +32,7 @@ Pipeline stages executed by `barcodeqc qc`:
 - Python 3.10+
 - `seqtk` 1.4+ on PATH
 - `cutadapt` (installed automatically via `pip`, provides the `cutadapt` CLI)
+- `pigz` optional (recommended for faster subsample compression)
 
 ## Installation
 
@@ -76,6 +77,12 @@ Verify installation:
 
 ```bash
 which seqtk
+```
+
+Optional speed-up (parallel gzip):
+
+```bash
+which pigz
 ```
 
 ## Quick Start
@@ -150,6 +157,7 @@ Notes on optional outputs:
 ## Troubleshooting
 - `seqtk` not found: install `seqtk` and ensure it is on PATH.
 - `cutadapt` not found: ensure the active environment includes `cutadapt` and the `cutadapt` CLI is available.
+- Slow subsampling: install `pigz` for parallel compression; `barcodeqc` will use it automatically when available.
 - Missing or incorrect tissue positions: provide a valid `tissue_positions_list.csv` or rely on the default barcode-set positions file.
 - Large input appears stuck right after `CLI started`: by default this version skips full raw-read counting to avoid startup delays on very large FASTQs. If you enable `--count_raw_reads`, expect startup to include a full scan of the input file.
 - Logs are written to `barcodeqc.log` and `SAMPLE_NAME/logs/`.

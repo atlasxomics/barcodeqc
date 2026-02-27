@@ -4,6 +4,7 @@ import logging
 import subprocess
 
 from pathlib import Path
+from shutil import which
 
 import pandas as pd
 
@@ -245,7 +246,15 @@ def run_subsample(config: QCConfig, output_dir: Path) -> Path:
         str(config.r2_path),
         str(config.sample_reads),
     ]
-    gzip_cmd = ["gzip"]
+    # Favor fast compression here because this file is an intermediate that is
+    # read immediately by cutadapt.
+    pigz_exe = which("pigz")
+    if pigz_exe:
+        # pigz: parallel gzip compression; -1 is substantially faster than the
+        # default level with acceptable size increase for intermediates.
+        gzip_cmd = [pigz_exe, "-1"]
+    else:
+        gzip_cmd = ["gzip", "-1"]
     logger.info("Running subsample ")
     logger.debug("seqtk cmd: %s", seqtk_cmd)
     logger.debug("gzip cmd: %s > %s", gzip_cmd, ds_path)
