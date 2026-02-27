@@ -22,6 +22,13 @@ def _load_static_image(filename: str) -> str | None:
     return _image_data_uri(image_path)
 
 
+def _load_static_text(filename: str) -> str | None:
+    text_path = files("barcodeqc") / "data" / "static" / filename
+    if not text_path.is_file():
+        return None
+    return text_path.read_text(encoding="utf-8")
+
+
 def write_summary_table(
     summary_table: pd.DataFrame,
     output_dir: Path,
@@ -174,6 +181,7 @@ def generate_report(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logo_uri = _load_static_image("logo.png")
+    css_text = _load_static_text("report.css")
     linker_filtering = _load_static_image("linker_filtering.png")
     pareto_good = _load_static_image("pareto_good.png")
     pareto_one = _load_static_image("pareto_bad_one.png")
@@ -250,7 +258,11 @@ def generate_report(
 <head>
   <meta charset="utf-8">
   <title>barcodeqc {{ sample_name }}</title>
-  <link rel="stylesheet" href="{{ css_href }}">
+  {% if css_text %}
+  <style>
+{{ css_text }}
+  </style>
+  {% endif %}
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 <body>
@@ -764,7 +776,7 @@ def generate_report(
     template = Template(html_template)
     html_content = template.render(
         sample_name=sample_name,
-        css_href=files("barcodeqc") / "data" / "static" / "report.css",
+        css_text=css_text,
         note_html=note_html,
         figures=figures,
         summary_table=(
