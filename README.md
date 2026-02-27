@@ -48,12 +48,6 @@ pip install -U pip
 pip install .
 ```
 
-For development installs:
-
-```bash
-pip install -e .
-```
-
 ### Install seqtk
 `barcodeqc` uses `seqtk sample` during subsampling, so `seqtk` must be on your PATH.
 
