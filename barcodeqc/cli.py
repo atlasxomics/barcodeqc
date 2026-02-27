@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from barcodeqc import qc
+from barcodeqc.config import output_dir_from_sample_name
 from barcodeqc.logging import setup_logging
 from barcodeqc.utils import require_executable, ExternalDependencyError
 
@@ -127,7 +128,7 @@ def main(args: argparse.Namespace) -> int:
             logger.error("Sample directory not found: %s", sample_dir)
             return 1
 
-        out_dir = Path.cwd() / args.sample_name
+        out_dir = output_dir_from_sample_name(args.sample_name)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         figures_dir = sample_dir / "figures"
@@ -178,7 +179,7 @@ def main(args: argparse.Namespace) -> int:
         logger.error(str(e))
         return 127
 
-    sample_dir = Path.cwd() / args.sample_name
+    sample_dir = output_dir_from_sample_name(args.sample_name)
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     if not args.dry_run:
@@ -204,7 +205,7 @@ def run(argv: list[str] | None = None) -> int:
 
     log_dir = None
     if args.command == "qc":
-        log_dir = Path.cwd() / args.sample_name / "logs"
+        log_dir = output_dir_from_sample_name(args.sample_name) / "logs"
 
     setup_logging(
         log_file="barcodeqc.log",

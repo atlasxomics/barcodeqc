@@ -10,6 +10,16 @@ from barcodeqc.utils import require_executable, ExternalDependencyError
 
 logger = logging.getLogger(__name__)
 
+OUTPUT_DIR_SUFFIX = "_outputs"
+
+
+def output_dir_from_sample_name(sample_name: str) -> Path:
+    if sample_name.endswith(OUTPUT_DIR_SUFFIX):
+        dir_name = sample_name
+    else:
+        dir_name = f"{sample_name}{OUTPUT_DIR_SUFFIX}"
+    return Path.cwd() / dir_name
+
 
 @dataclass(frozen=True)
 class QCConfig:
@@ -35,7 +45,7 @@ class QCConfig:
         random_seed: int,
         tissue_position_file: Optional[Path],
     ) -> "QCConfig":
-        output_dir = Path.cwd() / sample_name
+        output_dir = output_dir_from_sample_name(sample_name)
         if tissue_position_file is None:
             tissue_position_file = paths.BARCODE_PATHS[barcode_set]["positions"]
         return cls(
