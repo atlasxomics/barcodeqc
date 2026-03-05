@@ -71,7 +71,7 @@ From source:
 git clone https://github.com/lh3/seqtk.git
 cd seqtk
 make
-sudo cp seqtk <.venv path>/bin/
+cp seqtk <.venv path>/bin/
 ```
 
 Verify installation:
