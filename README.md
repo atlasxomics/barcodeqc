@@ -155,6 +155,23 @@ Notes on optional outputs:
 - `PASS` indicates the metric is within expected bounds.
 - `CAUTION` indicates the metric falls outside the expected range and should be reviewed in the report.
 
+## Example data
+Use this small dataset to validate your installation and run a quick smoke test.
+
+- Latch portal (GUI): https://console.latch.bio/s/17328881931993962
+- Direct download URL: https://latch-public.s3.amazonaws.com/test-data/13502/barcodeqc_example/barcode_example.tar.gz
+
+```bash
+barcodeqc qc \
+  -n barcodeqc_example \
+  -f data/barcodeqc_example_R2_001.fastq.gz \
+  -b bc220_20-MAY \
+  -t data/tissue_positions_list.csv \
+  --count_raw_reads
+```
+
+On most modern laptops, this example should complete in about a minute.
+
 ## Troubleshooting
 - `seqtk` not found: install `seqtk` and ensure it is on PATH.
 - `cutadapt` not found: ensure the active environment includes `cutadapt` and the `cutadapt` CLI is available.
