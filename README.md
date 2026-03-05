@@ -50,7 +50,7 @@ pip install .
 ```
 
 ### Install seqtk
-`barcodeqc` uses `seqtk sample` during subsampling, so `seqtk` must be on your PATH.
+`barcodeqc` uses `seqtk sample` during subsampling, so [`seqtk`](https://github.com/lh3/seqtk) must be on your PATH.
 
 macOS (Homebrew):
 
@@ -65,12 +65,13 @@ sudo apt-get update
 sudo apt-get install -y seqtk
 ```
 
-Conda or Mamba:
+From source:
 
-```bash
-mamba install -c bioconda seqtk
-# or
-conda install -c bioconda seqtk
+```
+git clone https://github.com/lh3/seqtk.git
+cd seqtk
+make
+sudo cp seqtk <.venv path>/bin/
 ```
 
 Verify installation:
