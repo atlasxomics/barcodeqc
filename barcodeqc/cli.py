@@ -27,7 +27,11 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="barcodeqc", prog="barcodeqc")
+    parser = argparse.ArgumentParser(
+        prog="barcodeqc",
+        description="Inital FASTQ-based QC of epigenomic DBiT-seq experiments from AtlasXomics.",
+        epilog="Questions? Comments? Contact support@atlasxomics.com."
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     qc_parser = subparsers.add_parser(
