@@ -317,7 +317,7 @@ def qc(
             "value": (
                 f"{raw_reads:,}"
                 if raw_reads is not None
-                else "NA (skipped; use --count_raw_reads)"
+                else "NA (skipped)"
             ),
         },
     ]

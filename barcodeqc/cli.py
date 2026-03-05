@@ -104,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_parser = subparsers.add_parser(
         "report",
-        help="Generate report from existing run files.",
+        help="Generate report from existing run files",
         prog="barcodeqc report",
     )
     report_parser.add_argument(
