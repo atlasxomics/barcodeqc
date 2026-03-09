@@ -30,34 +30,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="barcodeqc",
         description="Inital FASTQ-based QC of epigenomic DBiT-seq experiments from AtlasXomics.",
-        epilog="Questions? Comments? Contact support@atlasxomics.com."
+        epilog="Questions? Comments? Contact support@atlasxomics.com.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     qc_parser = subparsers.add_parser(
-        "qc", help="Run barcode QC pipeline", prog="barcodeqc qc"
+        "qc",
+        prog="barcodeqc qc",
+        description="Inital FASTQ-based QC of epigenomic DBiT-seq experiments from AtlasXomics.",
+        epilog="Questions? Comments? Contact support@atlasxomics.com.",
+        help="Run barcode QC pipeline",
     )
     qc_parser.add_argument(
-        "-n",
-        "--sample_name",
-        required=True,
+        "sample_name",
         help="Provide sample name for experiment."
     )
     qc_parser.add_argument(
-        "-f",
-        "--r2_path",
+        "r2_path",
         type=Path,
-        required=True,
         help="Path to Read2 fastq file; accepts .fastq or .fastq.gz."
     )
     qc_parser.add_argument(
-        "-b",
-        "--barcode_set",
+        "barcode_set",
         type=str,
+        metavar="barcode_set",
         choices=[
             "bc50", "bc96", "fg96", "bc220", "bc220_05-OCT", "bc220_20-MAY"
         ],
-        required=True,
         help="Barcode Set: bc50|bc96|fg96|bc220|bc220_05-OCT|bc220_20|"
     )
     qc_parser.add_argument(
@@ -66,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         required=False,
         default=10_000_000,
-        help="Value to subsample reads to; default=10e6."
+        help="Value to subsample reads to (default: %(default)s)."
     )
     qc_parser.add_argument(
         "-s",
@@ -74,7 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         required=False,
         default=42,
-        help="Seed for randomization during subsampling."
+        help="Seed for randomization during subsampling \
+            (default: %(default)s)."
     )
     qc_parser.add_argument(
         "-t",
@@ -82,14 +82,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=False,
         default=None,
-        help="Standard tissue_positions_list.csv from AtlasXBrowser, mapping \
+        help="Optional tissue_positions_list.csv from AtlasXBrowser, mapping \
             barcodes to on/off tissue call and coordinates."
     )
     qc_parser.add_argument(
         "--dry_run",
         required=False,
         action="store_true",
-        help="Print commands instead of executing them"
+        help="Print commands instead of executing them (default off)"
     )
     qc_parser.add_argument(
         "--count_raw_reads",
@@ -98,26 +98,25 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Count total reads in input FASTQ for report metadata. "
             "Disabled by default because it scans the full file and can be "
-            "slow on large datasets."
+            "slow on large datasets (default off)."
         ),
     )
 
     report_parser = subparsers.add_parser(
         "report",
-        help="Generate report from existing run files",
         prog="barcodeqc report",
+        help="Generate report from existing run files",
+        description="Rerun report generation on results of a previous \
+            execution of `barcodeqc qc`.",
+        epilog="Questions? Comments? Contact support@atlasxomics.com.",
     )
     report_parser.add_argument(
-        "-n",
-        "--sample_name",
-        required=True,
+        dest="sample_name",
         help="Sample name for report title/output."
     )
     report_parser.add_argument(
-        "-d",
-        "--sample_dir",
+        "sample_dir",
         type=Path,
-        required=True,
         help="Directory containing existing run files (png/csv).",
     )
 

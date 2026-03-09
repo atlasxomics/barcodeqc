@@ -89,7 +89,7 @@ which pigz
 ## Quick Start
 
 ```bash
-barcodeqc qc -n SAMPLE_NAME -f /path/to/read2.fastq.gz  -b bc220
+barcodeqc qc SAMPLE_NAME /path/to/read2.fastq.gz bc220
 ```
 
 If you do not provide `--tissue_position_file`, the tool uses the packaged tissue positions file for the selected barcode set.
@@ -99,7 +99,7 @@ If you do not provide `--tissue_position_file`, the tool uses the packaged tissu
 `qc` runs the full pipeline and generates figures, tables, and the HTML report.
 
 ```bash
-barcodeqc qc -n SAMPLE_NAME -f /path/to/read2.fastq.gz -b bc96
+barcodeqc qc SAMPLE_NAME /path/to/read2.fastq.gz bc96
 ```
 
 `report` regenerates the HTML report from an existing run directory.
@@ -109,9 +109,9 @@ barcodeqc report -n SAMPLE_NAME -d /path/to/SAMPLE_NAME
 ```
 
 ## Inputs
-- `--sample_name`: label used for the output directory and report name
-- `--r2_path`: Read 2 fastq or fastq.gz file
-- `--barcode_set`: one of `bc50`, `bc96`, `fg96`, `bc220`, `bc220_05-OCT`, `bc220_20-MAY`
+- `sample_name` (positional): label used for the output directory and report name
+- `r2_path` (positional): Read 2 fastq or fastq.gz file
+- `barcode_set` (positional): one of `bc50`, `bc96`, `fg96`, `bc220`, `bc220_05-OCT`, `bc220_20-MAY`
 - `--sample_reads`: number of reads to subsample (default `10000000`)
 - `--random_seed`: seed for subsampling (default `42`)
 - `--tissue_position_file`: optional tissue_positions_list.csv from AtlasXBrowser
@@ -119,7 +119,7 @@ barcodeqc report -n SAMPLE_NAME -d /path/to/SAMPLE_NAME
 - `--dry_run`: create the output directory but skip running the pipeline
 
 ## Outputs
-Each run creates a directory named after `--sample_name` in the current working directory.
+Each run creates a directory named after `sample_name` in the current working directory.
 
 ```text
 SAMPLE_NAME/
@@ -163,9 +163,9 @@ Use this small dataset to validate your installation and run a quick smoke test.
 
 ```bash
 barcodeqc qc \
-  -n barcodeqc_example \
-  -f data/barcodeqc_example_R2_001.fastq.gz \
-  -b bc220_20-MAY \
+  barcodeqc_example \
+  data/barcodeqc_example_R2_001.fastq.gz \
+  bc220_20-MAY \
   -t data/tissue_positions_list.csv \
   --count_raw_reads
 ```
