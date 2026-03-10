@@ -19,7 +19,8 @@ requires-python = ">=3.10"
 dependencies = [
   "pandas",
   "numpy == 1.26.4",
-  "scipy == 1.10.1",
+  "scipy == 1.10.1; python_version < '3.12'",
+  "scipy >= 1.11.0, < 1.14.0; python_version >= '3.12'",
   "plotly == 5.18.0",
   "jinja2",
   "cutadapt == 4.6",

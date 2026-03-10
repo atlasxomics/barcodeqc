@@ -38,7 +38,7 @@ Pipeline stages executed by `barcodeqc qc`:
 
 ### From source:
 
-> Make sure the interpreter used to create the virtual environment is Python 3.10 or newer. On systems with multiple Python installs, use an explicit binary such as `python3.10` or `python3.11`.
+> Make sure the interpreter used to create the virtual environment is Python 3.10 or newer. On systems with multiple Python installs, use an explicit binary such as `python3.10`, `python3.11`, or `python3.12`.
 
 ```bash
 git clone https://github.com/atlasxomics/barcodeqc.git
@@ -54,7 +54,7 @@ Conda alternative (instead of `venv`):
 ```bash
 git clone https://github.com/atlasxomics/barcodeqc.git
 cd barcodeqc
-conda create -n barcodeqc python=3.11 -y
+conda create -n barcodeqc python=3.12 -y
 conda activate barcodeqc
 pip install -U pip
 pip install .
