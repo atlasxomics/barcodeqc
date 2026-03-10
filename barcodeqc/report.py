@@ -536,15 +536,22 @@ def generate_report(
 
           {% if bc_contam_figures %}
           <div class="plot-row">
-            <div class="carousel-stage">
+            <div class="carousel-stage{% if bc_contam_figures|length > 1 %} has-controls{% endif %}">
               {% for fig in bc_contam_figures %}
               <div class="carousel-figure{% if not loop.first %} hidden{% endif %}" data-carousel="bc-contam">
                 {{ fig | safe }}
               </div>
               {% endfor %}
               {% if bc_contam_figures|length > 1 %}
-              <button class="carousel-arrow prev" data-carousel="bc-contam" data-dir="-1">◀</button>
-              <button class="carousel-arrow next" data-carousel="bc-contam" data-dir="1">▶</button>
+              <button class="carousel-arrow prev" data-carousel="bc-contam" data-dir="-1" aria-label="Previous Pareto plot">
+                <span class="arrow-icon" aria-hidden="true">◀</span>
+                <span class="arrow-label">Prev</span>
+              </button>
+              <button class="carousel-arrow next" data-carousel="bc-contam" data-dir="1" aria-label="Next Pareto plot">
+                <span class="arrow-label">Next</span>
+                <span class="arrow-icon" aria-hidden="true">▶</span>
+              </button>
+              <div class="carousel-indicator" data-carousel-indicator="bc-contam" aria-live="polite"></div>
               {% endif %}
             </div>
           </div>
@@ -675,15 +682,22 @@ def generate_report(
           </details>
           {% if lane_qc_figures %}
           <div class="plot-row">
-            <div class="carousel-stage">
+            <div class="carousel-stage{% if lane_qc_figures|length > 1 %} has-controls{% endif %}">
               {% for fig in lane_qc_figures %}
               <div class="carousel-figure{% if not loop.first %} hidden{% endif %}" data-carousel="lane-qc">
                 {{ fig | safe }}
               </div>
               {% endfor %}
               {% if lane_qc_figures|length > 1 %}
-              <button class="carousel-arrow prev" data-carousel="lane-qc" data-dir="-1">◀</button>
-              <button class="carousel-arrow next" data-carousel="lane-qc" data-dir="1">▶</button>
+              <button class="carousel-arrow prev" data-carousel="lane-qc" data-dir="-1" aria-label="Previous lane QC plot">
+                <span class="arrow-icon" aria-hidden="true">◀</span>
+                <span class="arrow-label">Prev</span>
+              </button>
+              <button class="carousel-arrow next" data-carousel="lane-qc" data-dir="1" aria-label="Next lane QC plot">
+                <span class="arrow-label">Next</span>
+                <span class="arrow-icon" aria-hidden="true">▶</span>
+              </button>
+              <div class="carousel-indicator" data-carousel-indicator="lane-qc" aria-live="polite"></div>
               {% endif %}
             </div>
           </div>
@@ -729,6 +743,13 @@ def generate_report(
     </div>
   </div>
   <script>
+    function updateCarouselIndicator(name, idx, total) {
+      const indicators = document.querySelectorAll(`[data-carousel-indicator="${name}"]`);
+      indicators.forEach((el) => {
+        el.textContent = `${idx + 1}/${total}`;
+      });
+    }
+
     function updateCarousel(name, dir) {
       const items = document.querySelectorAll(`.carousel-figure[data-carousel="${name}"]`);
       if (!items.length) return;
@@ -752,6 +773,7 @@ def generate_report(
           table.classList.toggle('hidden', idx !== next);
         });
       }
+      updateCarouselIndicator(name, next, items.length);
     }
 
     document.addEventListener('click', (e) => {
@@ -763,10 +785,18 @@ def generate_report(
       }
     });
     window.addEventListener('load', () => {
-      if (!window.Plotly) return;
-      document.querySelectorAll('.plotly-graph-div').forEach((el) => {
-        Plotly.Plots.resize(el);
-      });
+      const names = [...new Set(
+        Array.from(document.querySelectorAll('.carousel-figure[data-carousel]'))
+          .map((el) => el.getAttribute('data-carousel'))
+          .filter(Boolean)
+      )];
+      names.forEach((name) => updateCarousel(name, 0));
+
+      if (window.Plotly) {
+        document.querySelectorAll('.plotly-graph-div').forEach((el) => {
+          Plotly.Plots.resize(el);
+        });
+      }
     });
   </script>
 </body>

@@ -368,14 +368,14 @@ def pareto_plot(
     x_vals = list(range(len(slice_data)))
 
     labels0 = list(slice_data.index)
-    chan_labels = list(
-        "_" + (slice_data[channel_label] + 1).astype(str).str.zfill(2)
-    )
+    channel_raw = pd.to_numeric(slice_data[channel_label], errors="coerce")
+    chan_labels = channel_raw.map(
+        lambda v: f"_{int(v + 1):02d}" if pd.notna(v) else "_NA"
+    ).tolist()
     labels3 = [f"{lb}{cb}" for lb, cb in zip(labels0, chan_labels)]
 
     s = slice_data[colorby].astype(bool)
     marker_colors = np.where(s, "green", "#1f2937")
-    channel_raw = pd.to_numeric(slice_data[channel_label], errors="coerce")
     channel_vals = channel_raw.map(
         lambda v: str(int(v + 1)) if pd.notna(v) else "NA"
     )
