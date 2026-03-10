@@ -171,13 +171,13 @@ Notes on optional outputs:
 Use this small dataset to validate your installation and run a quick smoke test.
 
 - Latch portal (GUI): https://console.latch.bio/s/17328881931993962
-- Direct download URL: https://latch-public.s3.amazonaws.com/test-data/13502/barcodeqc_example/barcode_example.tar.gz
+- Direct download URL: https://latch-public.s3.amazonaws.com/test-data/13502/barcodeqc_example/barcodeqc_example.tar.gz
 
 ```bash
 barcodeqc qc \
   barcodeqc_example \
   data/barcodeqc_example_R2_001.fastq.gz \
-  bc220_20 \
+  bc220 \
   -t data/tissue_positions_list.csv \
   --count_raw_reads
 ```
