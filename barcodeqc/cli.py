@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import subprocess
 import warnings
 
 from pathlib import Path
@@ -19,12 +21,39 @@ import pandas as pd
 
 from barcodeqc import qc
 from barcodeqc.config import output_dir_from_sample_name
+from barcodeqc.files import BarcodeFileError, WildcardFileError
 from barcodeqc.logging import setup_logging
-from barcodeqc.utils import require_executable, ExternalDependencyError
+from barcodeqc.utils import ExternalDependencyError
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
+EX_OK = getattr(os, "EX_OK", 0)
+EX_USAGE = getattr(os, "EX_USAGE", 64)
+EX_DATAERR = getattr(os, "EX_DATAERR", 65)
+EX_NOINPUT = getattr(os, "EX_NOINPUT", 66)
+EX_UNAVAILABLE = getattr(os, "EX_UNAVAILABLE", 69)
+EX_SOFTWARE = getattr(os, "EX_SOFTWARE", 70)
+EX_OSERR = getattr(os, "EX_OSERR", 71)
+EX_IOERR = getattr(os, "EX_IOERR", 74)
+EX_NOPERM = getattr(os, "EX_NOPERM", 77)
+
+
+def _exit_code_for_exception(exc: Exception) -> int:
+    if isinstance(exc, ExternalDependencyError):
+        return EX_UNAVAILABLE
+    if isinstance(exc, FileNotFoundError):
+        return EX_NOINPUT
+    if isinstance(exc, (BarcodeFileError, WildcardFileError, ValueError)):
+        return EX_DATAERR
+    if isinstance(exc, subprocess.CalledProcessError):
+        return EX_IOERR
+    if isinstance(exc, PermissionError):
+        return EX_NOPERM
+    if isinstance(exc, OSError):
+        return EX_OSERR
+    return EX_SOFTWARE
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Questions? Comments? Contact support@atlasxomics.com.",
     )
     report_parser.add_argument(
-        dest="sample_name",
+        "sample_name",
         help="Sample name for report title/output."
     )
     report_parser.add_argument(
@@ -150,8 +179,7 @@ def main(args: argparse.Namespace) -> int:
 
         sample_dir = args.sample_dir
         if not sample_dir.exists():
-            logger.error("Sample directory not found: %s", sample_dir)
-            return 1
+            raise FileNotFoundError(f"Sample directory not found: {sample_dir}")
 
         out_dir = output_dir_from_sample_name(args.sample_name)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -194,15 +222,7 @@ def main(args: argparse.Namespace) -> int:
             table_dir=tables_dir if tables_dir.exists() else None,
         )
         logger.info("Report generated in %s", out_dir)
-        return 0
-
-    # Ensure seqtk installed in PATH for qc
-    try:
-        seqtk = require_executable("seqtk")
-        logger.debug(f"Using {seqtk} for subsampling.")
-    except ExternalDependencyError as e:
-        logger.error(str(e))
-        return 127
+        return EX_OK
 
     sample_dir = output_dir_from_sample_name(args.sample_name)
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -218,16 +238,21 @@ def main(args: argparse.Namespace) -> int:
             count_raw_reads=args.count_raw_reads,
         )
         if not spatial_table.exists():
-            logging.error(
-                "Spatial table not found at %s after qc", spatial_table
+            raise RuntimeError(
+                f"Spatial table not found after qc: {spatial_table}"
             )
-            return 1
 
-    return 0
+    return EX_OK
 
 
 def run(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
+    try:
+        args = parse_args(argv)
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else EX_SOFTWARE
+        if code == 0:
+            return EX_OK
+        return EX_USAGE
 
     log_dir = None
     if args.command == "qc":
@@ -240,7 +265,19 @@ def run(argv: list[str] | None = None) -> int:
         log_dir=log_dir,
     )
 
-    return main(args)
+    logger = logging.getLogger(__name__)
+    try:
+        return main(args)
+    except KeyboardInterrupt:
+        logger.error("Interrupted by user.")
+        return 130
+    except Exception as exc:
+        exit_code = _exit_code_for_exception(exc)
+        if exit_code == EX_SOFTWARE:
+            logger.exception("Unhandled exception in CLI run")
+        else:
+            logger.error(str(exc))
+        return exit_code
 
 
 if __name__ == "__main__":

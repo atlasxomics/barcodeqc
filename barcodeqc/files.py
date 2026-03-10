@@ -27,10 +27,9 @@ def load_wc_file(wcPath):
     try:
         testLine = list(df.iloc[5, :])
     except IndexError as e:
-        logging.ERROR(
-            "Fewer that 5 reads found in cutadapt wildcard file. "
-            f"Original error: {e}"
-        )
+        raise WildcardFileError(
+            "Fewer than 6 reads found in cutadapt wildcard file."
+        ) from e
 
     if len(merCol := utils.contains_acgt_word(testLine)) != 1:
         raise WildcardFileError(f"No 8-mer column matches found: {testLine=}")

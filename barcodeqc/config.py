@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import barcodeqc.paths as paths
-from barcodeqc.utils import require_executable, ExternalDependencyError
+from barcodeqc.utils import require_executable
 
 logger = logging.getLogger(__name__)
 

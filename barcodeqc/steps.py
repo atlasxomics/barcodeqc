@@ -189,19 +189,11 @@ def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
     position file to create base for _spatialTable.csv.  Returns Dataframe.
     '''
     # read read2 L1 wc list
-    try:
-        wcL1tbl = files.load_wc_file(wcL1File)
-    except ValueError as e:
-        logger.error(f"{e}")
-        exit(0)
+    wcL1tbl = files.load_wc_file(wcL1File)
     wcL1tbl['8mer_L1'] = wcL1tbl['8mer']
 
     # read read2 L2 wc List
-    try:
-        wcL2tbl = files.load_wc_file(wcL2File)
-    except ValueError as e:
-        logger.error(f"{e}")
-        exit(0)
+    wcL2tbl = files.load_wc_file(wcL2File)
     wcL2tbl['8mer_L2'] = wcL2tbl['8mer']
 
     # merge on second column
