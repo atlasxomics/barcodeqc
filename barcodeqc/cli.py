@@ -13,6 +13,7 @@ import logging
 import warnings
 
 from pathlib import Path
+from importlib.metadata import version
 
 import pandas as pd
 
@@ -32,7 +33,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Inital FASTQ-based QC of epigenomic DBiT-seq experiments from AtlasXomics.",
         epilog="Questions? Comments? Contact support@atlasxomics.com.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version=f"%(prog)s {version('barcodeqc')}"
+    )
+
+    subparsers = parser.add_subparsers(
+        title="commands", dest="command", required=True
+    )
 
     qc_parser = subparsers.add_parser(
         "qc",
@@ -62,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     qc_parser.add_argument(
         "-r",
         "--sample_reads",
+        metavar="<reads>",
         type=int,
         required=False,
         default=10_000_000,
@@ -70,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     qc_parser.add_argument(
         "-s",
         "--random_seed",
+        metavar="<seed>",
         type=int,
         required=False,
         default=42,
@@ -79,6 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     qc_parser.add_argument(
         "-t",
         "--tissue_position_file",
+        metavar="<file>",
         type=Path,
         required=False,
         default=None,

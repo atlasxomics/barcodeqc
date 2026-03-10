@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "barcodeqc"
 authors = [
-    {name = "James McGann", email = "jpaulmcgann@gmail.com"},
+    {name = "James McGann", email = "jamesm@atlasxomics.com"},
     {name = "Jeff Sabina", email = "jeffreys@atlasxomics.com"}
 ]
-version = "0.1.0"
+version = "0.0.1"
 description = "CLI tools for barcode QC of AtlasXomics experiments."
 classifiers = [
     "Intended Audience :: Science/Research",
