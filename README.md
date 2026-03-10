@@ -49,6 +49,17 @@ pip install -U pip
 pip install .
 ```
 
+Conda alternative (instead of `venv`):
+
+```bash
+git clone https://github.com/atlasxomics/barcodeqc.git
+cd barcodeqc
+conda create -n barcodeqc python=3.11 -y
+conda activate barcodeqc
+pip install -U pip
+pip install .
+```
+
 ### Install seqtk
 `barcodeqc` uses `seqtk sample` during subsampling, so [`seqtk`](https://github.com/lh3/seqtk) must be on your PATH.
 
@@ -71,7 +82,8 @@ From source:
 git clone https://github.com/lh3/seqtk.git
 cd seqtk
 make
-cp seqtk <.venv path>/bin/
+cp seqtk .venv/bin/             # if using venv
+cp seqtk "$CONDA_PREFIX/bin/"   # if using conda (after `conda activate barcodeqc`)
 ```
 
 Verify installation:
@@ -165,7 +177,7 @@ Use this small dataset to validate your installation and run a quick smoke test.
 barcodeqc qc \
   barcodeqc_example \
   data/barcodeqc_example_R2_001.fastq.gz \
-  bc220_20-MAY \
+  bc220_20 \
   -t data/tissue_positions_list.csv \
   --count_raw_reads
 ```
