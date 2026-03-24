@@ -229,7 +229,11 @@ def generate_report(
             if not str(item.get("label", "")).startswith("_")
         ]
     show_onoff_flag = _tissue_positions_provided(input_params)
-    show_onoff = bool(onoff_table) if show_onoff_flag is None else show_onoff_flag
+    show_onoff = (
+        onoff_table is not None and not onoff_table.empty
+        if show_onoff_flag is None
+        else show_onoff_flag
+    )
 
     bc_contam_labels: list[str] = []
     if figures["bc_contam_l1"]:

@@ -1,6 +1,6 @@
 # Specific stuff
 seqtk-1.4/
-tests/
+scratch/
 test/
 D0000/
 *example*
