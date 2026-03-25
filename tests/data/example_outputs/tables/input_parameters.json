@@ -1,0 +1,18 @@
+[
+  {
+    "label": "_tissue_positions_provided",
+    "value": "true"
+  },
+  {
+    "label": "Sample Name",
+    "value": "barcodeqc_example"
+  },
+  {
+    "label": "Barcode File",
+    "value": "bc220_20-MAY"
+  },
+  {
+    "label": "Raw Reads",
+    "value": "471,733"
+  }
+]

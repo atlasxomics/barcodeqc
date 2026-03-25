@@ -1,0 +1,10 @@
+metric,value
+total_pix,48400.0
+total_on,44509.0
+total_off,3891.0
+counts_on,326094.0
+counts_off,25177.0
+ratio_off_on,0.07720779897820874
+counts_per_pix_on,7.32647329753533
+counts_per_pix_off,6.4705731174505265
+frac_per_pix_off_on,0.8831770559550483
