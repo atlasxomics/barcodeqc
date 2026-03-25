@@ -45,13 +45,72 @@ def test_load_input_params_from_dir_reads_fixture(
 
 
 def test_load_linker_metrics_from_dir_reads_fixture(
-    example_output_dir: Path,
+    tmp_path: Path,
 ) -> None:
-    metrics = report.load_linker_metrics_from_dir(example_output_dir)
+    logs_dir = tmp_path / "logs"
+    tables_dir = tmp_path / "tables"
+    logs_dir.mkdir()
+    tables_dir.mkdir()
+
+    (logs_dir / "cutadapt_L1.log").write_text(
+        "Total reads processed: 100\nReads with adapters: 90 (90.0%)\n",
+        encoding="utf-8",
+    )
+    (logs_dir / "cutadapt_L2.log").write_text(
+        "Total reads processed: 80\nReads with adapters: 60 (75.0%)\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "sequence": "AAAACCCC",
+                "count": 70,
+                "frac_count": 0.70,
+                "cumulative_sum": 0.70,
+                "expectMer": True,
+            },
+            {
+                "sequence": "TTTTGGGG",
+                "count": 20,
+                "frac_count": 0.20,
+                "cumulative_sum": 0.90,
+                "expectMer": True,
+            },
+            {
+                "sequence": "CCCCAAAA",
+                "count": 10,
+                "frac_count": 0.10,
+                "cumulative_sum": 1.00,
+                "expectMer": False,
+            },
+        ]
+    ).to_csv(tables_dir / "L1_counts.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "sequence": "GGGGTTTT",
+                "count": 45,
+                "frac_count": 0.75,
+                "cumulative_sum": 0.75,
+                "expectMer": True,
+            },
+            {
+                "sequence": "AAAATTTT",
+                "count": 15,
+                "frac_count": 0.25,
+                "cumulative_sum": 1.00,
+                "expectMer": False,
+            },
+        ]
+    ).to_csv(tables_dir / "L2_counts.csv", index=False)
+
+    metrics = report.load_linker_metrics_from_dir(tmp_path)
 
     assert metrics is not None
     assert set(metrics) == {"L1", "L2"}
-    assert metrics["L1"]["Total Reads"] > 0
+    assert metrics["L1"]["Total Reads"] == 100
+    assert metrics["L1"]["Percent reads in expected barcodes"] == "90.0%"
+    assert metrics["L2"]["Total with Linker"] == 60
 
 
 def test_load_unexpected_barcodes_from_dir_reads_fixture(
