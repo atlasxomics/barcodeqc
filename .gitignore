@@ -1,9 +1,16 @@
+# macOS
+.DS_Store
+
 # Specific stuff
 seqtk-1.4/
 scratch/
 test/
 D0000/
 AGENTS.md
+
+# Generated local run outputs
+/*_outputs/
+/barcodeqc.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
