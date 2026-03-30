@@ -99,3 +99,28 @@ def test_qcconfig_validate_raises_for_missing_positions(
 
     with pytest.raises(FileNotFoundError, match="Could not find tissue_postion file"):
         config.validate()
+
+
+def test_qcconfig_validate_warns_for_read1_filename(
+    monkeypatch,
+    caplog,
+    tmp_path: Path,
+) -> None:
+    r2_path = tmp_path / "sample_R1_001.fastq.gz"
+    r2_path.write_text("", encoding="utf-8")
+
+    config = QCConfig(
+        sample_name="sample",
+        r2_path=r2_path,
+        barcode_set="bc50",
+        sample_reads=1000,
+        random_seed=42,
+        tissue_position_file=None,
+        output_dir=tmp_path / "out",
+    )
+
+    monkeypatch.setattr("barcodeqc.config.require_executable", lambda _: "tool")
+
+    config.validate()
+
+    assert "appears to be Read 1" in caplog.text

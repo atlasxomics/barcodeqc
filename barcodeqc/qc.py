@@ -99,6 +99,11 @@ def qc(
     wc_linker1, log_linker1, wc_linker2, log_linker2 = run_cutadapt(
         ds_path, logs_dir
     )
+    utils.validate_linker_detection(
+        config.r2_path,
+        log_linker1,
+        log_linker2,
+    )
 
     # Build spatial table
     spatial_table, spatial_table_path = build_spatial_table(

@@ -82,6 +82,29 @@ def test_load_wc_file_accepts_valid_fixture(tmp_path: Path) -> None:
     assert wc["readName"].tolist()[:2] == ["read1", "read2"]
 
 
+def test_load_wc_file_accepts_variable_whitespace(tmp_path: Path) -> None:
+    path = tmp_path / "wc.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "x   AAAACCCC   read1",
+                "x TTTTGGGG    read2",
+                "x    AAAACCCC read3",
+                "x TTTTGGGG read4",
+                "x AAAACCCC   read5",
+                "x   TTTTGGGG read6",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    wc = load_wc_file(path)
+
+    assert wc["8mer"].tolist()[:2] == ["AAAACCCC", "TTTTGGGG"]
+    assert wc["readName"].tolist()[:2] == ["read1", "read2"]
+
+
 def test_load_wc_file_rejects_short_input(tmp_path: Path) -> None:
     path = tmp_path / "wc.txt"
     path.write_text(

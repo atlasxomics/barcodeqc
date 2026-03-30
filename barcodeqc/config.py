@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import barcodeqc.paths as paths
-from barcodeqc.utils import require_executable
+from barcodeqc.utils import require_executable, validate_r2_fastq_path
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +63,15 @@ class QCConfig:
             raise FileNotFoundError(
                 f"fastq file path does not exist: {self.r2_path}"
             )
+        validate_r2_fastq_path(self.r2_path)
         if self.tissue_position_file is not None:
             if not self.tissue_position_file.exists():
                 raise FileNotFoundError(
                     f"Could not find tissue_postion file: {self.tissue_position_file}"
                 )
 
-        # Ensure seqtk installed in PATH
+        # Ensure CLI dependencies installed in PATH
         seqtk = require_executable("seqtk")
         logger.debug(f"Using {seqtk} for subsampling.")
+        cutadapt = require_executable("cutadapt")
+        logger.debug(f"Using {cutadapt} for linker filtering.")
