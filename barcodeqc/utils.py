@@ -95,6 +95,37 @@ def validate_linker_detection(
     )
 
 
+def log_barcode_capture_quality(
+    label: str,
+    adapter_reads: int,
+    valid_barcode_reads: int,
+    empty_barcode_reads: int,
+    warning_threshold: float = 0.05,
+    error_threshold: float = 0.20,
+) -> None:
+    if adapter_reads <= 0:
+        return
+
+    empty_fraction = empty_barcode_reads / adapter_reads
+    message = (
+        f"{label}: {empty_barcode_reads:,} of {adapter_reads:,} "
+        f"linker-matching reads ({empty_fraction:.1%}) did not yield a valid "
+        f"barcode capture; {valid_barcode_reads:,} yielded valid barcodes."
+    )
+
+    if empty_fraction > error_threshold:
+        logger.error(
+            "%s This often indicates the wrong read was supplied, unexpected "
+            "read structure, or severe sequence-quality problems. Continuing "
+            "the run, but downstream barcode metrics may be unreliable.",
+            message,
+        )
+    elif empty_fraction >= warning_threshold:
+        logger.warning("%s", message)
+    elif empty_barcode_reads > 0:
+        logger.info("%s", message)
+
+
 def require_executable(name: str) -> str:
     exe = which(name)
     if not exe:

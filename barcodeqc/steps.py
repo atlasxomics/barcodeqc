@@ -32,14 +32,21 @@ def build_count_table(
     wc_path: Path,
     bcl: pd.DataFrame,
     row_col: str,
-) -> tuple[pd.DataFrame, pd.Series, set[str], int, pd.Series]:
+) -> tuple[pd.DataFrame, pd.Series, set[str], int, pd.Series, int, int]:
 
     whitelist = bcl["sequence"]
     wc_df = files.load_wc_file(wc_path)
+    valid_wc_df = wc_df[wc_df["8mer"] != ""].copy()
+    empty_capture_reads = int((wc_df["8mer"] == "").sum())
+    valid_capture_reads = int(len(valid_wc_df))
 
-    unique_counts = wc_df["8mer"].value_counts()
+    unique_counts = valid_wc_df["8mer"].value_counts()
     count_table = unique_counts.to_frame(name="count")
-    count_table["frac_count"] = unique_counts / unique_counts.sum()
+    total_valid = unique_counts.sum()
+    if total_valid > 0:
+        count_table["frac_count"] = unique_counts / total_valid
+    else:
+        count_table["frac_count"] = pd.Series(dtype=float)
 
     count_table = count_table.sort_values(by=["frac_count"], ascending=False)
     count_table["cumulative_sum"] = count_table["frac_count"].cumsum()
@@ -61,7 +68,9 @@ def build_count_table(
         unique_counts,
         expected_bcs,
         num_to_ninety,
-        whitelist
+        whitelist,
+        valid_capture_reads,
+        empty_capture_reads,
     )
 
 
@@ -198,6 +207,10 @@ def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
 
     # merge on second column
     mergedTable8Mers = pd.merge(wcL1tbl, wcL2tbl, on='readName')
+    mergedTable8Mers = mergedTable8Mers.loc[
+        (mergedTable8Mers["8mer_L1"] != "") &
+        (mergedTable8Mers["8mer_L2"] != "")
+    ].copy()
 
     # concat 8-mers. In the read, B is first (associated with L2)
     mergedTable8Mers['16mer'] = mergedTable8Mers['8mer_L2'] + mergedTable8Mers['8mer_L1']
@@ -224,6 +237,11 @@ def make_spatial_table(wcL1File, wcL2File, tissuePosnFile):
 
     # remove all 16mers that are NOT in the tissue position file
     mergedTablePosition.dropna(subset=['row', 'col', 'on_off'], inplace=True)
+    mergedTablePosition["count"] = (
+        pd.to_numeric(mergedTablePosition["count"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     return mergedTablePosition
 

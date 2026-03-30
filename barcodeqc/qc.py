@@ -140,7 +140,9 @@ def qc(
             unique_counts,
             expected_bcs,
             numToNinety,
-            whitelist
+            whitelist,
+            valid_capture_reads,
+            empty_capture_reads,
         ) = build_count_table(wc, bcl, rc)
 
         count_table.to_csv(tables_dir / f'{eL}_counts.csv', index=True)
@@ -153,6 +155,12 @@ def qc(
         total_reads_str, adapter_reads_str = utils.parse_read_log(logF)
         total_reads = int(total_reads_str)
         adapter_reads = int(adapter_reads_str)
+        utils.log_barcode_capture_quality(
+            eL,
+            adapter_reads,
+            valid_capture_reads,
+            empty_capture_reads,
+        )
         logger.debug(
             format_wildcard_metrics(
                 wc.name,

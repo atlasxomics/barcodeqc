@@ -213,8 +213,32 @@ def hilo_plot(
 
     # ---- Validate y values ----
     y = pd.to_numeric(df[yval], errors="coerce")
-    if y.isna().all():
-        raise ValueError(f"Column '{yval}' must contain numeric values")
+    if df.empty or y.empty or y.isna().all():
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No valid barcode data",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+        )
+        fig.update_layout(
+            template="plotly_white",
+            height=320,
+            margin=dict(l=60, r=20, t=50, b=60),
+            autosize=True,
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        outpath = output_dir / file_name
+        pio.write_html(
+            fig,
+            file=str(outpath),
+            include_plotlyjs=False,
+            full_html=False,
+            config={"responsive": True, "displaylogo": False},
+        )
+        return outpath
 
     mean = y.mean()
     lower = mean / 2

@@ -4,8 +4,6 @@ import pandas as pd
 from pathlib import Path
 import re
 
-import barcodeqc.utils as utils
-
 logger = logging.getLogger(__name__)
 
 WILDCARD_MER_PATTERN = re.compile(r"^[ACGTN]{8,}$")
@@ -25,60 +23,38 @@ def load_wc_file(wcPath):
     it does, assumes the next column contains the read and and returns a
     DataFrame, with the columns renamed.
     '''
-    df = pd.read_csv(
-        wcPath,
-        header=None,
-        sep=r"\s+",
-        engine="python",
-        dtype=str,
-        keep_default_na=False,
-    )
-    if len(df.index) < 6:
+    rows: list[dict[str, str]] = []
+    with Path(wcPath).open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\r\n")
+            stripped = line.lstrip()
+            if stripped == "":
+                continue
+
+            parts = stripped.split(maxsplit=1)
+            first = parts[0]
+            remainder = parts[1] if len(parts) > 1 else ""
+
+            if WILDCARD_MER_PATTERN.fullmatch(first):
+                barcode = first
+                read_name = remainder
+            else:
+                barcode = ""
+                read_name = stripped
+
+            if read_name == "":
+                raise WildcardFileError(
+                    "Cutadapt wildcard file contains empty read names."
+                )
+
+            rows.append({"8mer": barcode, "readName": read_name})
+
+    if len(rows) < 6:
         raise WildcardFileError(
             "Fewer than 6 reads found in cutadapt wildcard file."
         )
 
-    barcode_column_counts: dict[int, int] = {}
-    for row in df.itertuples(index=False, name=None):
-        mer_cols = utils.contains_acgt_word(list(row))
-        if len(mer_cols) == 1:
-            barcode_column_counts[mer_cols[0]] = (
-                barcode_column_counts.get(mer_cols[0], 0) + 1
-            )
-
-    if not barcode_column_counts:
-        raise WildcardFileError(
-            "No 8-mer column matches found in cutadapt wildcard file."
-        )
-
-    mer_col = max(
-        barcode_column_counts,
-        key=lambda idx: (barcode_column_counts[idx], -idx),
-    )
-    read_name_col = mer_col + 1
-    if read_name_col >= len(df.columns):
-        raise WildcardFileError(
-            "Unable to locate read-name column after detected 8-mer column."
-        )
-
-    valid_rows = df.iloc[:, mer_col].str.fullmatch(WILDCARD_MER_PATTERN)
-    df = df.loc[valid_rows].copy()
-    if df.empty:
-        raise WildcardFileError(
-            "Cutadapt wildcard file does not contain any valid barcode rows."
-        )
-
-    if df.iloc[:, read_name_col].eq("").any():
-        raise WildcardFileError(
-            "Cutadapt wildcard file contains empty read names."
-        )
-
-    colNames = list(range(0, len(df.columns)))
-    colNames[mer_col] = '8mer'
-    colNames[read_name_col] = 'readName'
-    df.columns = colNames
-
-    return df
+    return pd.DataFrame(rows, columns=["8mer", "readName"])
 
 
 def open_barcode_file(bc_path: Path) -> pd.DataFrame:

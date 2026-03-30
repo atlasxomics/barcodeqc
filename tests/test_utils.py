@@ -10,6 +10,7 @@ from barcodeqc.utils import (
     contains_acgt_word,
     count_fastq_reads,
     infer_fastq_read_number,
+    log_barcode_capture_quality,
     parse_read_log,
     validate_linker_detection,
 )
@@ -74,3 +75,17 @@ def test_validate_linker_detection_rejects_missing_linkers(tmp_path: Path) -> No
             log1,
             log2,
         )
+
+
+def test_log_barcode_capture_quality_logs_error_without_raising(
+    caplog,
+) -> None:
+    log_barcode_capture_quality(
+        "L1",
+        adapter_reads=100,
+        valid_barcode_reads=70,
+        empty_barcode_reads=30,
+    )
+
+    assert "30.0%" in caplog.text
+    assert "Continuing the run" in caplog.text

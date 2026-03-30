@@ -17,7 +17,10 @@ from barcodeqc.steps import (
 
 def _write_wc_file(path: Path, rows: list[tuple[str, str]]) -> None:
     path.write_text(
-        "\n".join(f"x {barcode} {read_name}" for barcode, read_name in rows) + "\n",
+        "\n".join(
+            f"{barcode} {read_name}".strip()
+            for barcode, read_name in rows
+        ) + "\n",
         encoding="utf-8",
     )
 
@@ -43,7 +46,7 @@ def test_build_count_table_computes_expected_barcodes(tmp_path: Path) -> None:
         }
     )
 
-    count_table, unique_counts, expected_bcs, num_to_ninety, _ = (
+    count_table, unique_counts, expected_bcs, num_to_ninety, _, _, _ = (
         build_count_table(wc_path, whitelist, "row")
     )
 
@@ -52,6 +55,40 @@ def test_build_count_table_computes_expected_barcodes(tmp_path: Path) -> None:
     assert num_to_ninety == 2
     assert count_table.loc["AAAACCCC", "channel"] == 1
     assert bool(count_table.loc["CCCCAAAA", "expectMer"]) is False
+
+
+def test_build_count_table_ignores_empty_barcode_captures(tmp_path: Path) -> None:
+    wc_path = tmp_path / "wc.txt"
+    wc_path.write_text(
+        "\n".join(
+            [
+                "read1 1:N:0:TAG",
+                "AAAACCCC read2 1:N:0:TAG",
+                "read3 1:N:0:TAG",
+                "TTTTGGGG read4 1:N:0:TAG",
+                "AAAACCCC read5 1:N:0:TAG",
+                "read6 1:N:0:TAG",
+            ]
+        ) + "\n",
+        encoding="utf-8",
+    )
+    whitelist = pd.DataFrame(
+        {
+            "sequence": ["AAAACCCC", "TTTTGGGG"],
+            "row": [1, 2],
+            "col": [10, 20],
+        }
+    )
+
+    count_table, unique_counts, _, _, _, valid_reads, empty_reads = (
+        build_count_table(wc_path, whitelist, "row")
+    )
+
+    assert unique_counts["AAAACCCC"] == 2
+    assert unique_counts["TTTTGGGG"] == 1
+    assert valid_reads == 3
+    assert empty_reads == 3
+    assert set(count_table.index) == {"AAAACCCC", "TTTTGGGG"}
 
 
 def test_compute_hi_lo_qc_and_lane_status() -> None:
@@ -158,3 +195,54 @@ def test_make_spatial_table_merges_wildcards_and_positions(
         "CCCCAAAAGGGGTTTT",
     }
     assert spatial_table["count"].sum() == 6
+
+
+def test_make_spatial_table_drops_rows_missing_barcode_capture(
+    tmp_path: Path,
+) -> None:
+    wc1 = tmp_path / "wc1.txt"
+    wc2 = tmp_path / "wc2.txt"
+    positions = tmp_path / "positions.csv"
+
+    wc1.write_text(
+        "\n".join(
+            [
+                "AAAACCCC read1 1:N:0:TAG",
+                "read2 1:N:0:TAG",
+                "GGGGTTTT read3 1:N:0:TAG",
+                "AAAACCCC read4 1:N:0:TAG",
+                "AAAACCCC read5 1:N:0:TAG",
+                "GGGGTTTT read6 1:N:0:TAG",
+            ]
+        ) + "\n",
+        encoding="utf-8",
+    )
+    wc2.write_text(
+        "\n".join(
+            [
+                "TTTTGGGG read1 1:N:0:TAG",
+                "TTTTGGGG read2 1:N:0:TAG",
+                "read3 1:N:0:TAG",
+                "TTTTGGGG read4 1:N:0:TAG",
+                "TTTTGGGG read5 1:N:0:TAG",
+                "CCCCAAAA read6 1:N:0:TAG",
+            ]
+        ) + "\n",
+        encoding="utf-8",
+    )
+    positions.write_text(
+        "\n".join(
+            [
+                "TTTTGGGGAAAACCCC,1,0,1",
+                "CCCCAAAAGGGGTTTT,0,1,2",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    spatial_table = make_spatial_table(wc1, wc2, positions)
+
+    counts = dict(zip(spatial_table["16mer"], spatial_table["count"]))
+    assert counts["TTTTGGGGAAAACCCC"] == 3
+    assert counts["CCCCAAAAGGGGTTTT"] == 1

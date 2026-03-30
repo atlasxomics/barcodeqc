@@ -64,12 +64,12 @@ def test_load_wc_file_accepts_valid_fixture(tmp_path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                "x AAAACCCC read1",
-                "x TTTTGGGG read2",
-                "x AAAACCCC read3",
-                "x TTTTGGGG read4",
-                "x AAAACCCC read5",
-                "x TTTTGGGG read6",
+                "AAAACCCC read1",
+                "TTTTGGGG read2",
+                "AAAACCCC read3",
+                "TTTTGGGG read4",
+                "AAAACCCC read5",
+                "TTTTGGGG read6",
             ]
         )
         + "\n",
@@ -87,12 +87,12 @@ def test_load_wc_file_accepts_variable_whitespace(tmp_path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                "x   AAAACCCC   read1",
-                "x TTTTGGGG    read2",
-                "x    AAAACCCC read3",
-                "x TTTTGGGG read4",
-                "x AAAACCCC   read5",
-                "x   TTTTGGGG read6",
+                "AAAACCCC   read1",
+                "TTTTGGGG    read2",
+                "AAAACCCC read3",
+                "TTTTGGGG read4",
+                "AAAACCCC   read5",
+                "TTTTGGGG read6",
             ]
         )
         + "\n",
@@ -105,16 +105,42 @@ def test_load_wc_file_accepts_variable_whitespace(tmp_path: Path) -> None:
     assert wc["readName"].tolist()[:2] == ["read1", "read2"]
 
 
+def test_load_wc_file_preserves_empty_barcode_captures(tmp_path: Path) -> None:
+    path = tmp_path / "wc.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "  lh00134:1:1:1 1:N:0:CGTACTAG",
+                "AGGTACTC lh00134:1:1:2 1:N:0:CGTACTAG",
+                " lh00134:1:1:3 1:N:0:CGTACTAG",
+                "TTTTGGGG lh00134:1:1:4 1:N:0:CGTACTAG",
+                "AAAACCCC lh00134:1:1:5 1:N:0:CGTACTAG",
+                " lh00134:1:1:6 1:N:0:CGTACTAG",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    wc = load_wc_file(path)
+
+    assert wc["8mer"].tolist()[:4] == ["", "AGGTACTC", "", "TTTTGGGG"]
+    assert wc["readName"].tolist()[:2] == [
+        "lh00134:1:1:1 1:N:0:CGTACTAG",
+        "lh00134:1:1:2 1:N:0:CGTACTAG",
+    ]
+
+
 def test_load_wc_file_rejects_short_input(tmp_path: Path) -> None:
     path = tmp_path / "wc.txt"
     path.write_text(
         "\n".join(
             [
-                "x AAAACCCC read1",
-                "x TTTTGGGG read2",
-                "x AAAACCCC read3",
-                "x TTTTGGGG read4",
-                "x AAAACCCC read5",
+                "AAAACCCC read1",
+                "TTTTGGGG read2",
+                "AAAACCCC read3",
+                "TTTTGGGG read4",
+                "AAAACCCC read5",
             ]
         )
         + "\n",
